@@ -23,16 +23,21 @@ export async function POST(req: NextRequest) {
     const generalRows: any[] = body.generalRows || [];
     const productRows: any[] = body.productRows || [];
 
-    if (generalRows.length === 0) {
+    if (generalRows.length === 0 && productRows.length === 0) {
       return NextResponse.json(
-        { error: "No se recibieron filas del archivo general." },
+        { error: "No se recibieron filas para procesar." },
         { status: 400 }
       );
     }
 
     const supabase = createAdminClient();
 
-    // --- 1. Traer el estatus actual guardado para las órdenes que vienen en este archivo ---
+    let nuevos = 0;
+    let cambiaronEstatus = 0;
+    let sinCambio = 0;
+
+    if (generalRows.length > 0) {
+    // --- 1. Traer el estatus actual guardado para las órdenes que vienen en este lote ---
     const ids = generalRows.map((r) => String(r["ID"])).filter(Boolean);
     const { data: existing, error: fetchError } = await supabase
       .from("order_status_history")
@@ -46,10 +51,6 @@ export async function POST(req: NextRequest) {
     const existingMap = new Map(
       (existing || []).map((r) => [r.id, r])
     );
-
-    let nuevos = 0;
-    let cambiaronEstatus = 0;
-    let sinCambio = 0;
 
     const upsertRows = generalRows.map((row) => {
       const id = String(row["ID"]);
@@ -111,6 +112,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
     }
+    } // fin if (generalRows.length > 0)
 
     // --- 2. Productos (si se subió el archivo de productos) ---
     let productosActualizados = 0;
@@ -146,6 +148,9 @@ export async function POST(req: NextRequest) {
       sinCambio,
       productosActualizados,
     });
+    // Nota: esta ruta procesa un LOTE (batch) del archivo, no el archivo completo.
+    // El cliente (upload/page.tsx) se encarga de dividir el archivo en lotes
+    // y de sumar los resultados de cada llamada.
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || "Error desconocido" },
