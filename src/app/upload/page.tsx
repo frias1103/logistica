@@ -34,6 +34,7 @@ export default function UploadPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -50,6 +51,27 @@ export default function UploadPage() {
     router.replace("/login");
   }
 
+  function chunk<T>(arr: T[], size: number): T[][] {
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+      out.push(arr.slice(i, i + size));
+    }
+    return out;
+  }
+
+  async function sendBatch(generalRows: any[], productRows: any[]) {
+    const res = await fetch("/api/process-daily", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ generalRows, productRows }),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.error || "Ocurrió un error procesando un lote.");
+    }
+    return json;
+  }
+
   async function handleProcess() {
     if (!generalFile) {
       setError("Debes subir al menos el archivo general del día.");
@@ -62,18 +84,47 @@ export default function UploadPage() {
       const generalRows = await parseExcelFile(generalFile);
       const productRows = productFile ? await parseExcelFile(productFile) : [];
 
-      const res = await fetch("/api/process-daily", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ generalRows, productRows }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json.error || "Ocurrió un error procesando los archivos.");
-      } else {
-        setResult(json);
+      // Dividimos en lotes pequeños para no exceder el límite de tamaño de Vercel (~4.5MB por solicitud)
+      const generalBatches = chunk(generalRows, 300);
+      const productBatches = chunk(productRows, 800);
+
+      const totals = {
+        totalProcesado: 0,
+        nuevos: 0,
+        cambiaronEstatus: 0,
+        sinCambio: 0,
+        productosActualizados: 0,
+      };
+
+      setProgress(`Enviando lote 1 de ${generalBatches.length + productBatches.length}...`);
+
+      let batchNumber = 0;
+      for (const batch of generalBatches) {
+        batchNumber++;
+        setProgress(
+          `Procesando órdenes: lote ${batchNumber} de ${generalBatches.length}...`
+        );
+        const json = await sendBatch(batch, []);
+        totals.totalProcesado += json.totalProcesado;
+        totals.nuevos += json.nuevos;
+        totals.cambiaronEstatus += json.cambiaronEstatus;
+        totals.sinCambio += json.sinCambio;
       }
+
+      batchNumber = 0;
+      for (const batch of productBatches) {
+        batchNumber++;
+        setProgress(
+          `Procesando productos: lote ${batchNumber} de ${productBatches.length}...`
+        );
+        const json = await sendBatch([], batch);
+        totals.productosActualizados += json.productosActualizados;
+      }
+
+      setProgress(null);
+      setResult(totals);
     } catch (err: any) {
+      setProgress(null);
       setError(err.message || "Ocurrió un error leyendo los archivos.");
     } finally {
       setLoading(false);
@@ -127,6 +178,10 @@ export default function UploadPage() {
         >
           {loading ? "Procesando..." : "Procesar y guardar historial"}
         </button>
+
+        {progress && (
+          <p style={{ color: "#93c5fd", marginTop: 16 }}>{progress}</p>
+        )}
 
         {error && (
           <p style={{ color: "#f87171", marginTop: 16 }}>{error}</p>
