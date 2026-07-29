@@ -1,0 +1,283 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { createAdminClient } from "@/lib/supabaseAdmin";
+
+// Estatus que quedan fuera del bucket "en tránsito" y también fuera de
+// entregado/devolución/cancelado (son "no despachado todavía" o casos borde)
+const NO_TRANSITO = ["RECHAZADO", "GUIA_ANULADA", "PENDIENTE CONFIRMACION", "PENDIENTE"];
+
+function bucketFor(estatusRaw: string): "entregado" | "devolucion" | "cancelado" | "en_transito" | "otros" {
+  const e = (estatusRaw || "").trim().toUpperCase();
+  if (e === "ENTREGADO") return "entregado";
+  if (e.includes("DEVOLUCION")) return "devolucion";
+  if (e === "CANCELADO") return "cancelado";
+  if (NO_TRANSITO.includes(e)) return "otros";
+  return "en_transito";
+}
+
+function pct(part: number, total: number) {
+  if (!total) return 0;
+  return Math.round((part / total) * 1000) / 10;
+}
+
+async function checkAuth(req: NextRequest) {
+  const authHeader = req.headers.get("authorization") || "";
+  const token = authHeader.replace("Bearer ", "");
+  if (!token) return false;
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+  const { data, error } = await supabase.auth.getUser(token);
+  return !error && !!data.user;
+}
+
+export async function GET(req: NextRequest) {
+  const authorized = await checkAuth(req);
+  if (!authorized) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+
+  const supabase = createAdminClient();
+
+  // Traemos todo (son unos miles de filas, no representa un problema)
+  const { data: orders, error: ordersError } = await supabase
+    .from("order_status_history")
+    .select("*");
+
+  if (ordersError) {
+    return NextResponse.json({ error: ordersError.message }, { status: 500 });
+  }
+
+  const { data: products, error: productsError } = await supabase
+    .from("order_products")
+    .select("*");
+
+  if (productsError) {
+    return NextResponse.json({ error: productsError.message }, { status: 500 });
+  }
+
+  const ordersById = new Map(orders!.map((o) => [o.id, o]));
+
+  // =========================================================
+  // 1. ESTATUS GENERAL + POR CIUDAD
+  // =========================================================
+  const total = orders!.length;
+  const estatusCounts = new Map<string, number>();
+  const buckets = { entregado: 0, devolucion: 0, cancelado: 0, en_transito: 0, otros: 0 };
+  const ciudadMap = new Map<
+    string,
+    { entregado: number; devolucion: number; cancelado: number; en_transito: number; otros: number; total: number }
+  >();
+
+  for (const o of orders!) {
+    const estatus = (o.estatus_actual || "SIN ESTATUS").trim();
+    estatusCounts.set(estatus, (estatusCounts.get(estatus) || 0) + 1);
+
+    const b = bucketFor(estatus);
+    buckets[b]++;
+
+    const ciudad = o.ciudad_destino || "SIN CIUDAD";
+    if (!ciudadMap.has(ciudad)) {
+      ciudadMap.set(ciudad, { entregado: 0, devolucion: 0, cancelado: 0, en_transito: 0, otros: 0, total: 0 });
+    }
+    const c = ciudadMap.get(ciudad)!;
+    c[b]++;
+    c.total++;
+  }
+
+  const porEstatus = Array.from(estatusCounts.entries())
+    .map(([estatus, count]) => ({ estatus, count, pct: pct(count, total) }))
+    .sort((a, b) => b.count - a.count);
+
+  const bucketsResumen = {
+    entregado: { count: buckets.entregado, pct: pct(buckets.entregado, total) },
+    devolucion: { count: buckets.devolucion, pct: pct(buckets.devolucion, total) },
+    cancelado: { count: buckets.cancelado, pct: pct(buckets.cancelado, total) },
+    en_transito: { count: buckets.en_transito, pct: pct(buckets.en_transito, total) },
+    otros: { count: buckets.otros, pct: pct(buckets.otros, total) },
+  };
+
+  const porCiudad = Array.from(ciudadMap.entries())
+    .map(([ciudad, c]) => ({ ciudad, ...c }))
+    .sort((a, b) => b.total - a.total);
+
+  // =========================================================
+  // 2. TRANSPORTADORAS + CRUCE CON CIUDAD
+  // =========================================================
+  const transMap = new Map<
+    string,
+    { enviados: number; entregado: number; devolucion: number; en_transito: number }
+  >();
+  const transCiudadMap = new Map<
+    string,
+    { transportadora: string; ciudad: string; entregado: number; devolucion: number; en_transito: number; cancelado: number; total: number }
+  >();
+
+  for (const o of orders!) {
+    if (!o.numero_guia) continue; // solo lo que realmente se despachó
+    const b = bucketFor(o.estatus_actual);
+    if (b === "cancelado" || b === "otros") continue; // nunca se envió de verdad
+
+    const t = o.transportadora || "SIN TRANSPORTADORA";
+    if (!transMap.has(t)) {
+      transMap.set(t, { enviados: 0, entregado: 0, devolucion: 0, en_transito: 0 });
+    }
+    const tm = transMap.get(t)!;
+    tm.enviados++;
+    if (b === "entregado") tm.entregado++;
+    else if (b === "devolucion") tm.devolucion++;
+    else tm.en_transito++;
+
+    const ciudad = o.ciudad_destino || "SIN CIUDAD";
+    const key = `${t}__${ciudad}`;
+    if (!transCiudadMap.has(key)) {
+      transCiudadMap.set(key, { transportadora: t, ciudad, entregado: 0, devolucion: 0, en_transito: 0, cancelado: 0, total: 0 });
+    }
+    const tc = transCiudadMap.get(key)!;
+    tc.total++;
+    if (b === "entregado") tc.entregado++;
+    else if (b === "devolucion") tc.devolucion++;
+    else tc.en_transito++;
+  }
+
+  const transportadoras = Array.from(transMap.entries())
+    .map(([transportadora, t]) => ({
+      transportadora,
+      enviados: t.enviados,
+      entregados: t.entregado,
+      entregadosPct: pct(t.entregado, t.enviados),
+      devueltos: t.devolucion,
+      devueltosPct: pct(t.devolucion, t.enviados),
+      enTransito: t.en_transito,
+      enTransitoPct: pct(t.en_transito, t.enviados),
+    }))
+    .sort((a, b) => b.enviados - a.enviados);
+
+  const transportadoraCiudad = Array.from(transCiudadMap.values()).sort(
+    (a, b) => b.total - a.total
+  );
+
+  // =========================================================
+  // 3. DINERO
+  // =========================================================
+  function ganancia(o: any, esDevolucion: boolean) {
+    const venta = o.valor_compra_productos || 0;
+    const flete = o.precio_flete || 0;
+    const proveedor = o.total_precios_proveedor || 0;
+    const fleteDevolucion = esDevolucion ? o.costo_devolucion_flete || 0 : 0;
+    return venta - flete - proveedor - fleteDevolucion;
+  }
+
+  const dinero = {
+    entregado: { suma: 0, cantidad: 0 },
+    en_transito: { suma: 0, cantidad: 0 },
+    devolucion: { suma: 0, cantidad: 0 },
+  };
+
+  for (const o of orders!) {
+    const b = bucketFor(o.estatus_actual);
+    if (b === "entregado") {
+      dinero.entregado.suma += ganancia(o, false);
+      dinero.entregado.cantidad++;
+    } else if (b === "en_transito") {
+      dinero.en_transito.suma += ganancia(o, false);
+      dinero.en_transito.cantidad++;
+    } else if (b === "devolucion") {
+      dinero.devolucion.suma += ganancia(o, true);
+      dinero.devolucion.cantidad++;
+    }
+  }
+  dinero.entregado.suma = Math.round(dinero.entregado.suma);
+  dinero.en_transito.suma = Math.round(dinero.en_transito.suma);
+  dinero.devolucion.suma = Math.round(dinero.devolucion.suma);
+
+  // =========================================================
+  // 4. PRODUCTO + CRUCE CON CIUDAD
+  // =========================================================
+  const productoMap = new Map<
+    string,
+    { entregado: number; devolucion: number; cancelado: number; en_transito: number }
+  >();
+  const productoCiudadMap = new Map<
+    string,
+    { producto: string; ciudad: string; entregado: number; devolucion: number; cancelado: number; en_transito: number }
+  >();
+
+  for (const p of products!) {
+    const orden = ordersById.get(p.order_id);
+    if (!orden) continue;
+    const b = bucketFor(orden.estatus_actual);
+    const cantidad = p.cantidad || 1;
+    const nombre = p.producto || "SIN NOMBRE";
+
+    if (!productoMap.has(nombre)) {
+      productoMap.set(nombre, { entregado: 0, devolucion: 0, cancelado: 0, en_transito: 0 });
+    }
+    const pm = productoMap.get(nombre)!;
+    if (b === "entregado") pm.entregado += cantidad;
+    else if (b === "devolucion") pm.devolucion += cantidad;
+    else if (b === "cancelado") pm.cancelado += cantidad;
+    else if (b === "en_transito") pm.en_transito += cantidad;
+
+    const ciudad = orden.ciudad_destino || "SIN CIUDAD";
+    const key = `${nombre}__${ciudad}`;
+    if (!productoCiudadMap.has(key)) {
+      productoCiudadMap.set(key, { producto: nombre, ciudad, entregado: 0, devolucion: 0, cancelado: 0, en_transito: 0 });
+    }
+    const pc = productoCiudadMap.get(key)!;
+    if (b === "entregado") pc.entregado += cantidad;
+    else if (b === "devolucion") pc.devolucion += cantidad;
+    else if (b === "cancelado") pc.cancelado += cantidad;
+    else if (b === "en_transito") pc.en_transito += cantidad;
+  }
+
+  const productoResumen = Array.from(productoMap.entries())
+    .map(([producto, p]) => ({
+      producto,
+      ...p,
+      total: p.entregado + p.devolucion + p.cancelado + p.en_transito,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  const productoCiudad = Array.from(productoCiudadMap.values());
+
+  // =========================================================
+  // 5. PRODUCTIVIDAD DEL EQUIPO
+  // =========================================================
+  const guiasPorUsuarioDia = new Map<string, number>();
+  for (const o of orders!) {
+    if (!o.usuario_generacion_guia || !o.fecha_generacion_guia) continue;
+    const key = `${o.usuario_generacion_guia}__${o.fecha_generacion_guia}`;
+    guiasPorUsuarioDia.set(key, (guiasPorUsuarioDia.get(key) || 0) + 1);
+  }
+  const guiasPorUsuarioPorDia = Array.from(guiasPorUsuarioDia.entries())
+    .map(([key, cantidad]) => {
+      const [usuario, fecha] = key.split("__");
+      return { usuario, fecha, cantidad };
+    })
+    .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+
+  const vendedorMap = new Map<string, number>();
+  for (const o of orders!) {
+    const v = o.vendedor && o.vendedor.trim() ? o.vendedor.trim() : "SIN VENDEDOR ASIGNADO";
+    vendedorMap.set(v, (vendedorMap.get(v) || 0) + 1);
+  }
+  const confirmacionesPorVendedor = Array.from(vendedorMap.entries())
+    .map(([vendedor, cantidad]) => ({ vendedor, cantidad }))
+    .sort((a, b) => b.cantidad - a.cantidad);
+
+  return NextResponse.json({
+    total,
+    porEstatus,
+    buckets: bucketsResumen,
+    porCiudad,
+    transportadoras,
+    transportadoraCiudad,
+    dinero,
+    productoResumen,
+    productoCiudad,
+    guiasPorUsuarioPorDia,
+    confirmacionesPorVendedor,
+  });
+}

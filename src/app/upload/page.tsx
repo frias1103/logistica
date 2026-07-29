@@ -13,6 +13,29 @@ function parseExcelFile(file: File): Promise<any[]> {
         const data = e.target?.result;
         const workbook = XLSX.read(data, { type: "array" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
+        // Algunos exportadores dejan un "rango declarado" (!ref) desactualizado,
+        // más chico que los datos reales. Lo recalculamos revisando todas las
+        // celdas que realmente tienen contenido, para no perder filas.
+        const cellAddresses = Object.keys(sheet).filter((k) => k[0] !== "!");
+        if (cellAddresses.length > 0) {
+          let minRow = Infinity,
+            minCol = Infinity,
+            maxRow = -Infinity,
+            maxCol = -Infinity;
+          for (const addr of cellAddresses) {
+            const cell = XLSX.utils.decode_cell(addr);
+            if (cell.r < minRow) minRow = cell.r;
+            if (cell.c < minCol) minCol = cell.c;
+            if (cell.r > maxRow) maxRow = cell.r;
+            if (cell.c > maxCol) maxCol = cell.c;
+          }
+          sheet["!ref"] = XLSX.utils.encode_range({
+            s: { r: minRow, c: minCol },
+            e: { r: maxRow, c: maxCol },
+          });
+        }
+
         const json = XLSX.utils.sheet_to_json(sheet, { raw: false });
         resolve(json as any[]);
       } catch (err) {
@@ -151,9 +174,14 @@ export default function UploadPage() {
         }}
       >
         <h1 style={{ fontSize: 22 }}>Subida diaria de reportes</h1>
-        <button onClick={handleLogout} style={secondaryBtn}>
-          Cerrar sesión
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => router.push("/dashboard")} style={primaryBtn}>
+            Ver dashboard
+          </button>
+          <button onClick={handleLogout} style={secondaryBtn}>
+            Cerrar sesión
+          </button>
+        </div>
       </div>
 
       <div style={card}>
