@@ -11,7 +11,7 @@ function parseExcelFile(file: File): Promise<any[]> {
     reader.onload = (e) => {
       try {
         const data = e.target?.result;
-        const workbook = XLSX.read(data, { type: "binary" });
+        const workbook = XLSX.read(data, { type: "array" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json(sheet, { raw: false });
         resolve(json as any[]);
@@ -20,7 +20,7 @@ function parseExcelFile(file: File): Promise<any[]> {
       }
     };
     reader.onerror = reject;
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   });
 }
 
@@ -84,11 +84,16 @@ export default function UploadPage() {
       const generalRows = await parseExcelFile(generalFile);
       const productRows = productFile ? await parseExcelFile(productFile) : [];
 
+      const filasLeidasGeneral = generalRows.length;
+      const filasLeidasProductos = productRows.length;
+
       // Dividimos en lotes pequeños para no exceder el límite de tamaño de Vercel (~4.5MB por solicitud)
       const generalBatches = chunk(generalRows, 300);
       const productBatches = chunk(productRows, 800);
 
       const totals = {
+        filasLeidasGeneral,
+        filasLeidasProductos,
         totalProcesado: 0,
         nuevos: 0,
         cambiaronEstatus: 0,
@@ -198,12 +203,20 @@ export default function UploadPage() {
           >
             <p>✅ Procesado correctamente.</p>
             <ul style={{ marginTop: 8, lineHeight: 1.8 }}>
+              <li>Filas leídas del archivo general: {result.filasLeidasGeneral}</li>
+              <li>Filas leídas del archivo de productos: {result.filasLeidasProductos}</li>
               <li>Total de órdenes procesadas: {result.totalProcesado}</li>
               <li>Órdenes nuevas: {result.nuevos}</li>
               <li>Órdenes que cambiaron de estatus hoy: {result.cambiaronEstatus}</li>
               <li>Órdenes sin cambio de estatus: {result.sinCambio}</li>
               <li>Líneas de producto actualizadas: {result.productosActualizados}</li>
             </ul>
+            {result.filasLeidasGeneral !== result.totalProcesado && (
+              <p style={{ color: "#fbbf24", marginTop: 12 }}>
+                ⚠️ Las filas leídas y las procesadas no coinciden — revisa el
+                archivo o avísame.
+              </p>
+            )}
           </div>
         )}
       </div>
