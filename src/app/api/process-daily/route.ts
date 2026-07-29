@@ -102,9 +102,17 @@ export async function POST(req: NextRequest) {
       };
     });
 
+    // Quitamos duplicados por ID dentro del mismo lote (Postgres no permite
+    // aplicar ON CONFLICT dos veces a la misma fila en una sola operación)
+    const dedupedMap = new Map<string, any>();
+    for (const r of upsertRows) {
+      dedupedMap.set(r.id, r);
+    }
+    const dedupedUpsertRows = Array.from(dedupedMap.values());
+
     // Supabase/Postgres no acepta más de ~1000 filas por upsert de forma segura -> lotes de 500
-    for (let i = 0; i < upsertRows.length; i += 500) {
-      const batch = upsertRows.slice(i, i + 500);
+    for (let i = 0; i < dedupedUpsertRows.length; i += 500) {
+      const batch = dedupedUpsertRows.slice(i, i + 500);
       const { error } = await supabase
         .from("order_status_history")
         .upsert(batch, { onConflict: "id" });
@@ -129,8 +137,16 @@ export async function POST(req: NextRequest) {
           updated_at: new Date().toISOString(),
         }));
 
-      for (let i = 0; i < productUpsert.length; i += 500) {
-        const batch = productUpsert.slice(i, i + 500);
+      // Quitamos duplicados por (order_id, sku) dentro del mismo lote, por la
+      // misma razón que arriba
+      const productDedupedMap = new Map<string, any>();
+      for (const r of productUpsert) {
+        productDedupedMap.set(`${r.order_id}__${r.sku}`, r);
+      }
+      const dedupedProductUpsert = Array.from(productDedupedMap.values());
+
+      for (let i = 0; i < dedupedProductUpsert.length; i += 500) {
+        const batch = dedupedProductUpsert.slice(i, i + 500);
         const { error } = await supabase
           .from("order_products")
           .upsert(batch, { onConflict: "order_id,sku" });
@@ -138,7 +154,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: error.message }, { status: 500 });
         }
       }
-      productosActualizados = productUpsert.length;
+      productosActualizados = dedupedProductUpsert.length;
     }
 
     return NextResponse.json({
