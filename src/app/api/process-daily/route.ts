@@ -32,16 +32,17 @@ export async function POST(req: NextRequest) {
 
     const supabase = createAdminClient();
 
-    let nuevos = 0;
+  let nuevos = 0;
     let cambiaronEstatus = 0;
     let sinCambio = 0;
+    let ignoradasPorFechaVieja = 0;
 
     if (generalRows.length > 0) {
     // --- 1. Traer el estatus actual guardado para las órdenes que vienen en este lote ---
     const ids = generalRows.map((r) => String(r["ID"])).filter(Boolean);
     const { data: existing, error: fetchError } = await supabase
       .from("order_status_history")
-      .select("id, estatus_actual, fecha_estatus_desde, vendedor, fecha_vendedor_desde")
+      .select("id, estatus_actual, fecha_estatus_desde, vendedor, fecha_vendedor_desde, fecha_reporte")
       .in("id", ids);
 
     if (fetchError) {
@@ -57,6 +58,14 @@ export async function POST(req: NextRequest) {
       const estatusNuevo = String(row["ESTATUS"] || "").trim();
       const fechaReporte = toISODate(row["FECHA DE REPORTE"]);
       const prev = existingMap.get(id);
+
+      // Protección: nunca pisar una orden con un reporte más viejo que el
+      // que ya tenemos guardado (evita retroceder el estatus si se sube
+      // un Excel de un día anterior después de uno más reciente)
+      if (prev && prev.fecha_reporte && fechaReporte && fechaReporte < prev.fecha_reporte) {
+        ignoradasPorFechaVieja++;
+        return null;
+      }
 
       let fechaEstatusDesde: string | null;
       if (!prev) {
@@ -121,6 +130,7 @@ export async function POST(req: NextRequest) {
     // aplicar ON CONFLICT dos veces a la misma fila en una sola operación)
     const dedupedMap = new Map<string, any>();
     for (const r of upsertRows) {
+      if (r === null) continue; // fila ignorada por ser un reporte más viejo
       dedupedMap.set(r.id, r);
     }
     const dedupedUpsertRows = Array.from(dedupedMap.values());
@@ -172,11 +182,12 @@ export async function POST(req: NextRequest) {
       productosActualizados = dedupedProductUpsert.length;
     }
 
-    return NextResponse.json({
+   return NextResponse.json({
       totalProcesado: generalRows.length,
       nuevos,
       cambiaronEstatus,
       sinCambio,
+      ignoradasPorFechaVieja,
       productosActualizados,
     });
     // Nota: esta ruta procesa un LOTE (batch) del archivo, no el archivo completo.
