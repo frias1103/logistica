@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 
@@ -225,9 +225,11 @@ function SeguimientoTab({ data }: any) {
 function EstatusTab({ data }: any) {
   const b = data.buckets;
   const [selected, setSelected] = useState<string>("__todas__");
+  const [sortBy, setSortBy] = useState<string>("total");
 
-  const ciudades =
+  const ciudadesFiltradas =
     selected === "__todas__" ? data.porCiudad : data.porCiudad.filter((c: any) => c.ciudad === selected);
+  const ciudades = [...ciudadesFiltradas].sort((a: any, b: any) => b[sortBy] - a[sortBy]);
 
   return (
     <div>
@@ -245,7 +247,7 @@ function EstatusTab({ data }: any) {
         rows={data.porEstatus.map((e: any) => [e.estatus, e.count, `${e.pct}%`])}
       />
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "24px 0 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "24px 0 12px", flexWrap: "wrap" }}>
         <h3 style={{ ...h3, margin: 0 }}>Por ciudad destino</h3>
         <select value={selected} onChange={(e) => setSelected(e.target.value)} style={selectStyle}>
           <option value="__todas__">Todas las ciudades</option>
@@ -254,6 +256,14 @@ function EstatusTab({ data }: any) {
               {c.ciudad}
             </option>
           ))}
+        </select>
+        <span style={{ color: "#94a3b8", fontSize: 13 }}>Ordenar por:</span>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={selectStyle}>
+          <option value="total">Total</option>
+          <option value="entregado">Entregado</option>
+          <option value="devolucion">Devolución</option>
+          <option value="cancelado">Cancelado</option>
+          <option value="en_transito">En tránsito</option>
         </select>
       </div>
       <Table
@@ -364,11 +374,19 @@ function DineroTab({ data }: any) {
 function ProductoTab({ data }: any) {
   const productos = data.productoResumen;
   const [selected, setSelected] = useState<string>("__todos__");
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const grouped = new Map<string, any[]>();
   for (const pc of data.productoCiudad) {
     if (!grouped.has(pc.producto)) grouped.set(pc.producto, []);
     grouped.get(pc.producto)!.push(pc);
+  }
+
+  const transGrouped = new Map<string, any[]>();
+  for (const t of data.productoCiudadTransportadora) {
+    const key = `${t.producto}__${t.ciudad}`;
+    if (!transGrouped.has(key)) transGrouped.set(key, []);
+    transGrouped.get(key)!.push(t);
   }
 
   const productosAMostrar =
@@ -410,17 +428,89 @@ function ProductoTab({ data }: any) {
             <div style={{ fontWeight: 600, color: "#93c5fd", margin: "12px 0 6px" }}>
               {p.producto} — {p.total} pedidos
             </div>
-            <Table
-              headers={["Ciudad", "Entregado", "Devolución", "Cancelado", "En tránsito", "Total"]}
-              rows={rows.map((c: any) => [
-                c.ciudad,
-                pctCell(c.entregado, c.total),
-                pctCell(c.devolucion, c.total),
-                pctCell(c.cancelado, c.total),
-                pctCell(c.en_transito, c.total),
-                c.total,
-              ])}
-            />
+            <div style={{ overflowX: "auto", marginBottom: 32, background: "#1e293b", borderRadius: 10 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th style={th}>Ciudad</th>
+                    <th style={th}>Entregado</th>
+                    <th style={th}>Devolución</th>
+                    <th style={th}>Cancelado</th>
+                    <th style={th}>En tránsito</th>
+                    <th style={th}>Total</th>
+                    <th style={th}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((c: any) => {
+                    const key = `${p.producto}__${c.ciudad}`;
+                    const isOpen = expandedKey === key;
+                    const transportadoras = (transGrouped.get(key) || []).sort(
+                      (a: any, b: any) =>
+                        b.entregado + b.devolucion + b.cancelado + b.en_transito -
+                        (a.entregado + a.devolucion + a.cancelado + a.en_transito)
+                    );
+                    return (
+                      <Fragment key={key}>
+                        <tr key={key} style={{ borderTop: "1px solid #334155" }}>
+                          <td style={td}>{c.ciudad}</td>
+                          <td style={td}>{pctCell(c.entregado, c.total)}</td>
+                          <td style={td}>{pctCell(c.devolucion, c.total)}</td>
+                          <td style={td}>{pctCell(c.cancelado, c.total)}</td>
+                          <td style={td}>{pctCell(c.en_transito, c.total)}</td>
+                          <td style={td}>{c.total}</td>
+                          <td style={td}>
+                            <button
+                              onClick={() => setExpandedKey(isOpen ? null : key)}
+                              style={{ ...selectStyle, cursor: "pointer" }}
+                            >
+                              {isOpen ? "▲ Ocultar transportadoras" : "▼ Ver transportadoras"}
+                            </button>
+                          </td>
+                        </tr>
+                        {isOpen && (
+                          <tr key={key + "_exp"}>
+                            <td style={{ ...td, padding: 0 }} colSpan={7}>
+                              <div style={{ padding: "8px 12px 16px 24px", background: "#0f172a" }}>
+                                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                                  <thead>
+                                    <tr>
+                                      <th style={th}>Transportadora</th>
+                                      <th style={th}>Entregado</th>
+                                      <th style={th}>Devolución</th>
+                                      <th style={th}>Cancelado</th>
+                                      <th style={th}>En tránsito</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {transportadoras.length === 0 && (
+                                      <tr>
+                                        <td style={td} colSpan={5}>
+                                          Sin datos.
+                                        </td>
+                                      </tr>
+                                    )}
+                                    {transportadoras.map((t: any) => (
+                                      <tr key={t.transportadora} style={{ borderTop: "1px solid #334155" }}>
+                                        <td style={td}>{t.transportadora}</td>
+                                        <td style={td}>{t.entregado}</td>
+                                        <td style={td}>{t.devolucion}</td>
+                                        <td style={td}>{t.cancelado}</td>
+                                        <td style={td}>{t.en_transito}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         );
       })}
