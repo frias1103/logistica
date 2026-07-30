@@ -262,13 +262,19 @@ export default function UploadPage() {
               </p>
             )}
             {notifInfo && (
-              <p style={{ color: "#94a3b8", marginTop: 12, fontSize: 13 }}>
-                {notifInfo.resultadoEnvio?.skipped
-                  ? `⚠️ WhatsApp no configurado: ${notifInfo.resultadoEnvio.reason}`
-                  : notifInfo.resultadoEnvio?.ok
-                  ? `📲 Notificación de WhatsApp enviada (🟠 ${notifInfo.naranja} / 🔴 ${notifInfo.rojo}).`
-                  : "⚠️ No se pudo enviar la notificación de WhatsApp."}
-              </p>
+              <div style={{ marginTop: 12 }}>
+                <p style={{ color: "#94a3b8", fontSize: 13 }}>
+                  {notifInfo.resultadoEnvio?.skipped
+                    ? `⚠️ WhatsApp no configurado: ${notifInfo.resultadoEnvio.reason}`
+                    : notifInfo.resultadoEnvio?.ok
+                    ? `📲 Notificación de WhatsApp enviada (🟠 ${notifInfo.naranja} / 🔴 ${notifInfo.rojo}).`
+                    : "⚠️ No se pudo enviar la notificación de WhatsApp."}
+                </p>
+                <p style={{ color: "#64748b", fontSize: 12, marginTop: 4 }}>
+                  Respuesta de CallMeBot (para diagnóstico): {" "}
+                  {notifInfo.resultadoEnvio?.body || notifInfo.resultadoEnvio?.error || "(sin respuesta)"}
+                </p>
+              </div>
             )}
           </div>
         )}
