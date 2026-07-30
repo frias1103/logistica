@@ -4,15 +4,39 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 
-type Tab = "estatus" | "transportadoras" | "dinero" | "producto" | "productividad" | "tags";
+type Tab =
+  | "seguimiento"
+  | "estatus"
+  | "transportadoras"
+  | "dinero"
+  | "producto"
+  | "productividad"
+  | "tags";
 
 const money = (n: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n);
 
-function countPct(count: number, total: number) {
-  if (!total) return `${count} (0%)`;
-  const p = Math.round((count / total) * 1000) / 10;
-  return `${count} (${p}%)`;
+function pctCell(count: number, total: number) {
+  const p = total ? Math.round((count / total) * 1000) / 10 : 0;
+  return (
+    <span>
+      {count}
+      <span style={{ color: "#64748b", fontSize: 11, marginLeft: 6 }}>({p}%)</span>
+    </span>
+  );
+}
+
+function colorForDias(d: number) {
+  if (d <= 4) return "rgba(34, 197, 94, 0.15)";
+  if (d <= 9) return "rgba(234, 179, 8, 0.15)";
+  if (d <= 20) return "rgba(249, 115, 22, 0.18)";
+  return "rgba(239, 68, 68, 0.2)";
+}
+
+function formatFecha(f: string | null) {
+  if (!f) return "-";
+  const [y, m, d] = f.split("-");
+  return `${d}/${m}/${y}`;
 }
 
 export default function DashboardPage() {
@@ -23,7 +47,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
-  const [tab, setTab] = useState<Tab>("estatus");
+  const [tab, setTab] = useState<Tab>("seguimiento");
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: sessionData }) => {
@@ -61,6 +85,7 @@ export default function DashboardPage() {
   if (!data) return null;
 
   const tabs: { key: Tab; label: string }[] = [
+    { key: "seguimiento", label: "Seguimiento" },
     { key: "estatus", label: "Estatus" },
     { key: "transportadoras", label: "Transportadoras" },
     { key: "dinero", label: "Dinero" },
@@ -93,6 +118,7 @@ export default function DashboardPage() {
         ))}
       </div>
 
+      {tab === "seguimiento" && <SeguimientoTab data={data} />}
       {tab === "estatus" && <EstatusTab data={data} />}
       {tab === "transportadoras" && <TransportadorasTab data={data} />}
       {tab === "dinero" && <DineroTab data={data} />}
@@ -103,8 +129,95 @@ export default function DashboardPage() {
   );
 }
 
+function SeguimientoTab({ data }: any) {
+  const s = data.seguimiento;
+  const [selected, setSelected] = useState<string>("__todos__");
+
+  const gruposAMostrar =
+    selected === "__todos__" ? s.grupos : s.grupos.filter((g: any) => g.estatus === selected);
+
+  return (
+    <div>
+      <p style={{ color: "#94a3b8", marginBottom: 16 }}>
+        Corte al {formatFecha(s.fechaReporte)}. Se excluyen órdenes ya cerradas
+        (entregado, devolución, cancelado, rechazado, guía anulada). Se
+        considera "sin movimiento" cuando lleva más de 2 días en el mismo
+        estatus.
+      </p>
+
+      <h3 style={h3}>Panorama general — {s.totalSinMovimiento} órdenes sin movimiento</h3>
+      <Table
+        headers={["Estatus", "Total en este estatus", "Sin movimiento (+2 días)", "%"]}
+        rows={s.resumenPorEstatus.map((r: any) => [
+          r.estatus,
+          r.totalEnEstatus,
+          r.sinMovimiento,
+          `${r.pct}%`,
+        ])}
+      />
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "24px 0 12px" }}>
+        <h3 style={{ ...h3, margin: 0 }}>Detalle por estatus</h3>
+        <select value={selected} onChange={(e) => setSelected(e.target.value)} style={selectStyle}>
+          <option value="__todos__">Todos los estatus</option>
+          {s.grupos.map((g: any) => (
+            <option key={g.estatus} value={g.estatus}>
+              {g.estatus}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {gruposAMostrar.map((g: any) => (
+        <div key={g.estatus} style={{ marginBottom: 24 }}>
+          <div
+            style={{
+              background: "#334155",
+              color: "white",
+              fontWeight: 600,
+              padding: "10px 14px",
+              borderRadius: "8px 8px 0 0",
+            }}
+          >
+            {g.estatus} — {g.cantidad} pedidos — desde {formatFecha(g.desde)} hasta {formatFecha(g.hasta)}
+          </div>
+          <div style={{ overflowX: "auto", background: "#1e293b", borderRadius: "0 0 10px 10px" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={th}>Cliente</th>
+                  <th style={th}>Teléfono</th>
+                  <th style={th}>Ciudad</th>
+                  <th style={th}>Número guía</th>
+                  <th style={th}>Días sin mov.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {g.ordenes.map((o: any) => (
+                  <tr key={o.id} style={{ background: colorForDias(o.dias) }}>
+                    <td style={td}>{o.nombre_cliente || "-"}</td>
+                    <td style={td}>{o.telefono || "-"}</td>
+                    <td style={td}>{o.ciudad_destino || "-"}</td>
+                    <td style={td}>{o.numero_guia || "-"}</td>
+                    <td style={td}>{o.dias}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function EstatusTab({ data }: any) {
   const b = data.buckets;
+  const [selected, setSelected] = useState<string>("__todas__");
+
+  const ciudades =
+    selected === "__todas__" ? data.porCiudad : data.porCiudad.filter((c: any) => c.ciudad === selected);
+
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 24 }}>
@@ -121,15 +234,25 @@ function EstatusTab({ data }: any) {
         rows={data.porEstatus.map((e: any) => [e.estatus, e.count, `${e.pct}%`])}
       />
 
-      <h3 style={h3}>Por ciudad destino</h3>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "24px 0 12px" }}>
+        <h3 style={{ ...h3, margin: 0 }}>Por ciudad destino</h3>
+        <select value={selected} onChange={(e) => setSelected(e.target.value)} style={selectStyle}>
+          <option value="__todas__">Todas las ciudades</option>
+          {data.porCiudad.map((c: any) => (
+            <option key={c.ciudad} value={c.ciudad}>
+              {c.ciudad}
+            </option>
+          ))}
+        </select>
+      </div>
       <Table
         headers={["Ciudad", "Entregado", "Devolución", "Cancelado", "En tránsito", "Total"]}
-        rows={data.porCiudad.map((c: any) => [
+        rows={ciudades.map((c: any) => [
           c.ciudad,
-          countPct(c.entregado, c.total),
-          countPct(c.devolucion, c.total),
-          countPct(c.cancelado, c.total),
-          countPct(c.en_transito, c.total),
+          pctCell(c.entregado, c.total),
+          pctCell(c.devolucion, c.total),
+          pctCell(c.cancelado, c.total),
+          pctCell(c.en_transito, c.total),
           c.total,
         ])}
       />
@@ -138,8 +261,8 @@ function EstatusTab({ data }: any) {
 }
 
 function TransportadorasTab({ data }: any) {
-  // Agrupamos por ciudad (de mayor a menor volumen), y dentro de cada ciudad
-  // ordenamos las transportadoras usadas ahí, también de mayor a menor.
+  const [selected, setSelected] = useState<string>("__todas__");
+
   const ciudadGroups = new Map<string, { total: number; rows: any[] }>();
   for (const t of data.transportadoraCiudad) {
     if (!ciudadGroups.has(t.ciudad)) {
@@ -156,6 +279,9 @@ function TransportadorasTab({ data }: any) {
       rows: [...g.rows].sort((a, b) => b.total - a.total),
     }))
     .sort((a, b) => b.total - a.total);
+
+  const gruposAMostrar =
+    selected === "__todas__" ? groupedByCiudad : groupedByCiudad.filter((g) => g.ciudad === selected);
 
   return (
     <div>
@@ -174,8 +300,19 @@ function TransportadorasTab({ data }: any) {
         ])}
       />
 
-      <h3 style={h3}>Cruce transportadora × ciudad</h3>
-      {groupedByCiudad.map((g) => (
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "24px 0 12px" }}>
+        <h3 style={{ ...h3, margin: 0 }}>Cruce transportadora × ciudad</h3>
+        <select value={selected} onChange={(e) => setSelected(e.target.value)} style={selectStyle}>
+          <option value="__todas__">Todas las ciudades</option>
+          {groupedByCiudad.map((g) => (
+            <option key={g.ciudad} value={g.ciudad}>
+              {g.ciudad}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {gruposAMostrar.map((g) => (
         <div key={g.ciudad} style={{ marginBottom: 20 }}>
           <div style={{ fontWeight: 600, color: "#93c5fd", margin: "12px 0 6px" }}>
             {g.ciudad} — {g.total} pedidos
@@ -184,9 +321,9 @@ function TransportadorasTab({ data }: any) {
             headers={["Transportadora", "Entregado", "Devolución", "En tránsito", "Total"]}
             rows={g.rows.map((t: any) => [
               t.transportadora,
-              countPct(t.entregado, t.total),
-              countPct(t.devolucion, t.total),
-              countPct(t.en_transito, t.total),
+              pctCell(t.entregado, t.total),
+              pctCell(t.devolucion, t.total),
+              pctCell(t.en_transito, t.total),
               t.total,
             ])}
           />
@@ -214,7 +351,7 @@ function DineroTab({ data }: any) {
 }
 
 function ProductoTab({ data }: any) {
-  const productos = data.productoResumen; // ya viene ordenado de mayor a menor total
+  const productos = data.productoResumen;
   const [selected, setSelected] = useState<string>("__todos__");
 
   const grouped = new Map<string, any[]>();
@@ -233,10 +370,10 @@ function ProductoTab({ data }: any) {
         headers={["Producto", "Entregado", "Devolución", "Cancelado", "En tránsito", "Total"]}
         rows={productos.map((p: any) => [
           p.producto,
-          countPct(p.entregado, p.total),
-          countPct(p.devolucion, p.total),
-          countPct(p.cancelado, p.total),
-          countPct(p.en_transito, p.total),
+          pctCell(p.entregado, p.total),
+          pctCell(p.devolucion, p.total),
+          pctCell(p.cancelado, p.total),
+          pctCell(p.en_transito, p.total),
           p.total,
         ])}
       />
@@ -266,10 +403,10 @@ function ProductoTab({ data }: any) {
               headers={["Ciudad", "Entregado", "Devolución", "Cancelado", "En tránsito", "Total"]}
               rows={rows.map((c: any) => [
                 c.ciudad,
-                countPct(c.entregado, c.total),
-                countPct(c.devolucion, c.total),
-                countPct(c.cancelado, c.total),
-                countPct(c.en_transito, c.total),
+                pctCell(c.entregado, c.total),
+                pctCell(c.devolucion, c.total),
+                pctCell(c.cancelado, c.total),
+                pctCell(c.en_transito, c.total),
                 c.total,
               ])}
             />
@@ -298,40 +435,61 @@ function ProductividadTab({ data }: any) {
 }
 
 function TagsTab({ data }: any) {
+  const todasLasCiudades = Array.from(
+    new Set(data.tagsResumen.flatMap((t: any) => t.porCiudad.map((c: any) => c.ciudad)))
+  ).sort() as string[];
+  const [selected, setSelected] = useState<string>("__todas__");
+
   return (
     <div>
-      {data.tagsResumen.map((t: any) => (
-        <div key={t.tag} style={{ marginBottom: 36 }}>
-          <div
-            style={{
-              background: "#1e293b",
-              borderRadius: 10,
-              padding: 16,
-              borderLeft: "4px solid #a855f7",
-              marginBottom: 12,
-              maxWidth: 320,
-            }}
-          >
-            <div style={{ fontSize: 13, color: "#94a3b8" }}>🏷️ {t.tag}</div>
-            <div style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>{t.cantidad}</div>
-            <div style={{ fontSize: 13, color: "#94a3b8" }}>
-              {t.pctDelTotal}% del total de órdenes
-            </div>
-          </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+        <span style={{ color: "#94a3b8", fontSize: 13 }}>Filtrar por ciudad:</span>
+        <select value={selected} onChange={(e) => setSelected(e.target.value)} style={selectStyle}>
+          <option value="__todas__">Todas las ciudades</option>
+          {todasLasCiudades.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </div>
 
-          <h3 style={h3}>Por ciudad — {t.tag}</h3>
-          <Table
-            headers={["Ciudad", "Entregado", "Devolución", "En tránsito", "Total"]}
-            rows={t.porCiudad.map((c: any) => [
-              c.ciudad,
-              `${c.entregado} (${c.entregadoPct}%)`,
-              `${c.devolucion} (${c.devolucionPct}%)`,
-              `${c.enTransito} (${c.enTransitoPct}%)`,
-              c.total,
-            ])}
-          />
-        </div>
-      ))}
+      {data.tagsResumen.map((t: any) => {
+        const filas =
+          selected === "__todas__" ? t.porCiudad : t.porCiudad.filter((c: any) => c.ciudad === selected);
+        return (
+          <div key={t.tag} style={{ marginBottom: 36 }}>
+            <div
+              style={{
+                background: "#1e293b",
+                borderRadius: 10,
+                padding: 16,
+                borderLeft: "4px solid #a855f7",
+                marginBottom: 12,
+                maxWidth: 320,
+              }}
+            >
+              <div style={{ fontSize: 13, color: "#94a3b8" }}>🏷️ {t.tag}</div>
+              <div style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>{t.cantidad}</div>
+              <div style={{ fontSize: 13, color: "#94a3b8" }}>
+                {t.pctDelTotal}% del total de órdenes
+              </div>
+            </div>
+
+            <h3 style={h3}>Por ciudad — {t.tag}</h3>
+            <Table
+              headers={["Ciudad", "Entregado", "Devolución", "En tránsito", "Total"]}
+              rows={filas.map((c: any) => [
+                c.ciudad,
+                pctCell(c.entregado, c.total),
+                pctCell(c.devolucion, c.total),
+                pctCell(c.enTransito, c.total),
+                c.total,
+              ])}
+            />
+          </div>
+        );
+      })}
       <p style={{ color: "#64748b", fontSize: 13 }}>
         Solo se cuentan órdenes que sí se enviaron (se excluyen cancelado,
         rechazado, pendiente confirmación y guía anulada).

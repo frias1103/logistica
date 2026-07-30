@@ -332,6 +332,89 @@ export async function GET(req: NextRequest) {
     };
   });
 
+  // =========================================================
+  // 7. SEGUIMIENTO DE ÓRDENES SIN MOVIMIENTO (usa fecha_estatus_desde)
+  // =========================================================
+  // A diferencia del filtro general de arriba, aquí SÍ incluimos
+  // PENDIENTE CONFIRMACION, PENDIENTE y GUIA_GENERADA, porque ahora tenemos
+  // la fecha real de cambio de estatus (no dependemos de que la
+  // transportadora reporte un evento).
+  const ESTATUS_TERMINALES = ["ENTREGADO", "CANCELADO", "RECHAZADO", "GUIA_ANULADA"];
+  const esTerminal = (estatus: string) => {
+    const e = (estatus || "").trim().toUpperCase();
+    return ESTATUS_TERMINALES.includes(e) || e.includes("DEVOLUCION");
+  };
+
+  const fechaReporteMax = orders.reduce((max: string | null, o: any) => {
+    if (!o.fecha_reporte) return max;
+    if (!max || o.fecha_reporte > max) return o.fecha_reporte;
+    return max;
+  }, null as string | null);
+  const HOY = fechaReporteMax ? new Date(fechaReporteMax + "T00:00:00") : new Date();
+
+  function diasDesde(fecha: string | null) {
+    if (!fecha) return null;
+    const f = new Date(fecha + "T00:00:00");
+    return Math.round((HOY.getTime() - f.getTime()) / (1000 * 60 * 60 * 24));
+  }
+
+  const seguimientoGruposMap = new Map<string, any[]>();
+  const totalPorEstatusMap = new Map<string, number>();
+
+  for (const o of orders) {
+    const estatus = (o.estatus_actual || "SIN ESTATUS").trim();
+    totalPorEstatusMap.set(estatus, (totalPorEstatusMap.get(estatus) || 0) + 1);
+    if (esTerminal(estatus)) continue;
+
+    const dias = diasDesde(o.fecha_estatus_desde);
+    if (dias === null || dias <= 2) continue;
+
+    if (!seguimientoGruposMap.has(estatus)) seguimientoGruposMap.set(estatus, []);
+    seguimientoGruposMap.get(estatus)!.push({
+      id: o.id,
+      nombre_cliente: o.nombre_cliente,
+      telefono: o.telefono,
+      ciudad_destino: o.ciudad_destino,
+      numero_guia: o.numero_guia,
+      dias,
+      fecha_estatus_desde: o.fecha_estatus_desde,
+    });
+  }
+
+  const resumenPorEstatus = Array.from(seguimientoGruposMap.entries())
+    .map(([estatus, ords]) => ({
+      estatus,
+      sinMovimiento: ords.length,
+      totalEnEstatus: totalPorEstatusMap.get(estatus) || 0,
+      pct: pct(ords.length, totalPorEstatusMap.get(estatus) || 0),
+    }))
+    .sort((a, b) => b.sinMovimiento - a.sinMovimiento);
+
+  const grupos = Array.from(seguimientoGruposMap.entries())
+    .map(([estatus, ords]) => {
+      const sorted = [...ords].sort((a, b) => b.dias - a.dias);
+      const fechas = ords.map((o) => o.fecha_estatus_desde).filter(Boolean).sort();
+      return {
+        estatus,
+        cantidad: sorted.length,
+        desde: fechas[0] || null,
+        hasta: fechas[fechas.length - 1] || null,
+        ordenes: sorted,
+      };
+    })
+    .sort((a, b) => {
+      const maxA = a.ordenes[0]?.dias || 0;
+      const maxB = b.ordenes[0]?.dias || 0;
+      return maxB - maxA;
+    });
+
+  const seguimiento = {
+    fechaReporte: fechaReporteMax,
+    totalSinMovimiento: resumenPorEstatus.reduce((s, r) => s + r.sinMovimiento, 0),
+    resumenPorEstatus,
+    grupos,
+  };
+
   return NextResponse.json({
     total,
     porEstatus,
@@ -345,5 +428,6 @@ export async function GET(req: NextRequest) {
     guiasPorUsuarioPorDia,
     confirmacionesPorVendedor,
     tagsResumen,
+    seguimiento,
   });
 }
