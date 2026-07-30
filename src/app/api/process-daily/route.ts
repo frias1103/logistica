@@ -91,6 +91,7 @@ export async function POST(req: NextRequest) {
         fecha_ultimo_movimiento: toISODate(row["FECHA DE ÚLTIMO MOVIMIENTO"]),
         fecha_novedad: toISODate(row["FECHA DE NOVEDAD"]),
         fecha_solucion: toISODate(row["FECHA DE SOLUCIÓN"]),
+        tags: row["TAGS"] || null,
         valor_facturado: toNumber(row["VALOR FACTURADO"]),
         valor_compra_productos: toNumber(row["VALOR DE COMPRA EN PRODUCTOS"]),
         precio_flete: toNumber(row["PRECIO FLETE"]),

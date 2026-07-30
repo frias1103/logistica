@@ -4,10 +4,16 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 
-type Tab = "estatus" | "transportadoras" | "dinero" | "producto" | "productividad";
+type Tab = "estatus" | "transportadoras" | "dinero" | "producto" | "productividad" | "tags";
 
 const money = (n: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n);
+
+function countPct(count: number, total: number) {
+  if (!total) return `${count} (0%)`;
+  const p = Math.round((count / total) * 1000) / 10;
+  return `${count} (${p}%)`;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -60,6 +66,7 @@ export default function DashboardPage() {
     { key: "dinero", label: "Dinero" },
     { key: "producto", label: "Producto" },
     { key: "productividad", label: "Productividad" },
+    { key: "tags", label: "Tags" },
   ];
 
   return (
@@ -91,6 +98,7 @@ export default function DashboardPage() {
       {tab === "dinero" && <DineroTab data={data} />}
       {tab === "producto" && <ProductoTab data={data} />}
       {tab === "productividad" && <ProductividadTab data={data} />}
+      {tab === "tags" && <TagsTab data={data} />}
     </div>
   );
 }
@@ -118,10 +126,10 @@ function EstatusTab({ data }: any) {
         headers={["Ciudad", "Entregado", "Devolución", "Cancelado", "En tránsito", "Total"]}
         rows={data.porCiudad.map((c: any) => [
           c.ciudad,
-          c.entregado,
-          c.devolucion,
-          c.cancelado,
-          c.en_transito,
+          countPct(c.entregado, c.total),
+          countPct(c.devolucion, c.total),
+          countPct(c.cancelado, c.total),
+          countPct(c.en_transito, c.total),
           c.total,
         ])}
       />
@@ -153,9 +161,9 @@ function TransportadorasTab({ data }: any) {
         rows={data.transportadoraCiudad.map((t: any) => [
           t.transportadora,
           t.ciudad,
-          t.entregado,
-          t.devolucion,
-          t.en_transito,
+          countPct(t.entregado, t.total),
+          countPct(t.devolucion, t.total),
+          countPct(t.en_transito, t.total),
           t.total,
         ])}
       />
@@ -215,12 +223,6 @@ function ProductoTab({ data }: any) {
 function ProductividadTab({ data }: any) {
   return (
     <div>
-      <h3 style={h3}>Guías generadas por día (proveedor/cuenta)</h3>
-      <Table
-        headers={["Usuario/Cuenta", "Fecha", "Guías generadas"]}
-        rows={data.guiasPorUsuarioPorDia.map((g: any) => [g.usuario, g.fecha, g.cantidad])}
-      />
-
       <h3 style={h3}>Órdenes confirmadas por vendedor (histórico acumulado)</h3>
       <p style={{ color: "#64748b", fontSize: 13, marginBottom: 12 }}>
         Nota: este número es acumulado histórico, no por día — el archivo no
@@ -231,6 +233,49 @@ function ProductividadTab({ data }: any) {
         headers={["Vendedor", "Órdenes confirmadas"]}
         rows={data.confirmacionesPorVendedor.map((v: any) => [v.vendedor, v.cantidad])}
       />
+    </div>
+  );
+}
+
+function TagsTab({ data }: any) {
+  return (
+    <div>
+      {data.tagsResumen.map((t: any) => (
+        <div key={t.tag} style={{ marginBottom: 36 }}>
+          <div
+            style={{
+              background: "#1e293b",
+              borderRadius: 10,
+              padding: 16,
+              borderLeft: "4px solid #a855f7",
+              marginBottom: 12,
+              maxWidth: 320,
+            }}
+          >
+            <div style={{ fontSize: 13, color: "#94a3b8" }}>🏷️ {t.tag}</div>
+            <div style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>{t.cantidad}</div>
+            <div style={{ fontSize: 13, color: "#94a3b8" }}>
+              {t.pctDelTotal}% del total de órdenes
+            </div>
+          </div>
+
+          <h3 style={h3}>Por ciudad — {t.tag}</h3>
+          <Table
+            headers={["Ciudad", "Entregado", "Devolución", "En tránsito", "Total"]}
+            rows={t.porCiudad.map((c: any) => [
+              c.ciudad,
+              `${c.entregado} (${c.entregadoPct}%)`,
+              `${c.devolucion} (${c.devolucionPct}%)`,
+              `${c.enTransito} (${c.enTransitoPct}%)`,
+              c.total,
+            ])}
+          />
+        </div>
+      ))}
+      <p style={{ color: "#64748b", fontSize: 13 }}>
+        Solo se cuentan órdenes que sí se enviaron (se excluyen cancelado,
+        rechazado, pendiente confirmación y guía anulada).
+      </p>
     </div>
   );
 }

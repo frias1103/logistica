@@ -32,6 +32,25 @@ async function checkAuth(req: NextRequest) {
   return !error && !!data.user;
 }
 
+// Supabase entrega máximo 1000 filas por consulta por defecto (aunque se pida
+// "todo" con select("*")). Esta función pagina hasta traer la tabla completa.
+async function fetchAll(supabase: any, table: string) {
+  const pageSize = 1000;
+  let from = 0;
+  let all: any[] = [];
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select("*")
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    all = all.concat(data || []);
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 export async function GET(req: NextRequest) {
   const authorized = await checkAuth(req);
   if (!authorized) {
@@ -40,21 +59,13 @@ export async function GET(req: NextRequest) {
 
   const supabase = createAdminClient();
 
-  // Traemos todo (son unos miles de filas, no representa un problema)
-  const { data: orders, error: ordersError } = await supabase
-    .from("order_status_history")
-    .select("*");
-
-  if (ordersError) {
-    return NextResponse.json({ error: ordersError.message }, { status: 500 });
-  }
-
-  const { data: products, error: productsError } = await supabase
-    .from("order_products")
-    .select("*");
-
-  if (productsError) {
-    return NextResponse.json({ error: productsError.message }, { status: 500 });
+  let orders: any[];
+  let products: any[];
+  try {
+    orders = await fetchAll(supabase, "order_status_history");
+    products = await fetchAll(supabase, "order_products");
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || "Error trayendo datos" }, { status: 500 });
   }
 
   const ordersById = new Map(orders!.map((o) => [o.id, o]));
@@ -267,6 +278,60 @@ export async function GET(req: NextRequest) {
     .map(([vendedor, cantidad]) => ({ vendedor, cantidad }))
     .sort((a, b) => b.cantidad - a.cantidad);
 
+  // =========================================================
+  // 6. SEGUIMIENTO POR TAGS (ANTICIPO PAGADO, ENVIO A OFICINA)
+  // =========================================================
+  const TAGS_A_SEGUIR = ["ANTICIPO PAGADO", "ENVIO A OFICINA"];
+  const NO_ENVIADO_TAGS = ["CANCELADO", "RECHAZADO", "PENDIENTE CONFIRMACION", "GUIA_ANULADA"];
+
+  const tagsResumen = TAGS_A_SEGUIR.map((tagBuscado) => {
+    const ordenesConTag = orders.filter((o) => {
+      const t = (o.tags || "").toUpperCase();
+      if (!t.includes(tagBuscado.toUpperCase())) return false;
+      const estatus = (o.estatus_actual || "").trim().toUpperCase();
+      return !NO_ENVIADO_TAGS.includes(estatus);
+    });
+
+    const cantidad = ordenesConTag.length;
+
+    const ciudadTagMap = new Map<
+      string,
+      { entregado: number; devolucion: number; en_transito: number; total: number }
+    >();
+    for (const o of ordenesConTag) {
+      const b = bucketFor(o.estatus_actual);
+      const ciudad = o.ciudad_destino || "SIN CIUDAD";
+      if (!ciudadTagMap.has(ciudad)) {
+        ciudadTagMap.set(ciudad, { entregado: 0, devolucion: 0, en_transito: 0, total: 0 });
+      }
+      const c = ciudadTagMap.get(ciudad)!;
+      c.total++;
+      if (b === "entregado") c.entregado++;
+      else if (b === "devolucion") c.devolucion++;
+      else c.en_transito++;
+    }
+
+    const porCiudad = Array.from(ciudadTagMap.entries())
+      .map(([ciudad, c]) => ({
+        ciudad,
+        total: c.total,
+        entregado: c.entregado,
+        entregadoPct: pct(c.entregado, c.total),
+        devolucion: c.devolucion,
+        devolucionPct: pct(c.devolucion, c.total),
+        enTransito: c.en_transito,
+        enTransitoPct: pct(c.en_transito, c.total),
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    return {
+      tag: tagBuscado,
+      cantidad,
+      pctDelTotal: pct(cantidad, total),
+      porCiudad,
+    };
+  });
+
   return NextResponse.json({
     total,
     porEstatus,
@@ -279,5 +344,6 @@ export async function GET(req: NextRequest) {
     productoCiudad,
     guiasPorUsuarioPorDia,
     confirmacionesPorVendedor,
+    tagsResumen,
   });
 }
