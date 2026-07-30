@@ -19,9 +19,20 @@ const money = (n: number) =>
 function pctCell(count: number, total: number) {
   const p = total ? Math.round((count / total) * 1000) / 10 : 0;
   return (
-    <span>
-      {count}
-      <span style={{ color: "#64748b", fontSize: 11, marginLeft: 6 }}>({p}%)</span>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      <span>{count}</span>
+      <span
+        style={{
+          background: "#334155",
+          color: "#e2e8f0",
+          fontSize: 12,
+          fontWeight: 600,
+          padding: "2px 7px",
+          borderRadius: 999,
+        }}
+      >
+        {p}%
+      </span>
     </span>
   );
 }
