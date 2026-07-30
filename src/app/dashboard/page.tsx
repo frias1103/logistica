@@ -383,7 +383,7 @@ function ProductoTab({ data }: any) {
   }
 
   const transGrouped = new Map<string, any[]>();
-  for (const t of data.productoCiudadTransportadora) {
+  for (const t of data.productoCiudadTransportadora || []) {
     const key = `${t.producto}__${t.ciudad}`;
     if (!transGrouped.has(key)) transGrouped.set(key, []);
     transGrouped.get(key)!.push(t);

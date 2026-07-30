@@ -253,6 +253,32 @@ export async function GET(req: NextRequest) {
 
   const productoCiudad = Array.from(productoCiudadMap.values());
 
+  // Producto × ciudad × transportadora (para el desplegable de transportadoras
+  // dentro de cada ciudad en la pestaña de Producto)
+  const productoCiudadTransMap = new Map<
+    string,
+    { producto: string; ciudad: string; transportadora: string; entregado: number; devolucion: number; cancelado: number; en_transito: number }
+  >();
+  for (const p of products) {
+    const orden = ordersById.get(p.order_id);
+    if (!orden) continue;
+    const b = bucketFor(orden.estatus_actual);
+    const cantidad = p.cantidad || 1;
+    const nombre = p.producto || "SIN NOMBRE";
+    const ciudad = orden.ciudad_destino || "SIN CIUDAD";
+    const transportadora = orden.transportadora || "SIN TRANSPORTADORA";
+    const key = `${nombre}__${ciudad}__${transportadora}`;
+    if (!productoCiudadTransMap.has(key)) {
+      productoCiudadTransMap.set(key, { producto: nombre, ciudad, transportadora, entregado: 0, devolucion: 0, cancelado: 0, en_transito: 0 });
+    }
+    const pct2 = productoCiudadTransMap.get(key)!;
+    if (b === "entregado") pct2.entregado += cantidad;
+    else if (b === "devolucion") pct2.devolucion += cantidad;
+    else if (b === "cancelado") pct2.cancelado += cantidad;
+    else if (b === "en_transito") pct2.en_transito += cantidad;
+  }
+  const productoCiudadTransportadora = Array.from(productoCiudadTransMap.values());
+
   // =========================================================
   // 5. PRODUCTIVIDAD DEL EQUIPO
   // =========================================================
@@ -425,6 +451,7 @@ export async function GET(req: NextRequest) {
     dinero,
     productoResumen,
     productoCiudad,
+    productoCiudadTransportadora,
     guiasPorUsuarioPorDia,
     confirmacionesPorVendedor,
     tagsResumen,
