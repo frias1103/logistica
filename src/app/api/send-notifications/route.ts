@@ -81,15 +81,19 @@ export async function POST(req: NextRequest) {
     return Math.round((HOY.getTime() - f.getTime()) / (1000 * 60 * 60 * 24));
   }
 
-  // --- Conteo rojo / naranja (igual que en la pestaña Seguimiento) ---
-  let rojo = 0;
+  // --- Conteo por zona de color (igual que en la pestaña Seguimiento) ---
+  let verde = 0;
+  let amarillo = 0;
   let naranja = 0;
+  let rojo = 0;
   for (const o of orders) {
     if (esTerminal(o.estatus_actual)) continue;
     const dias = diasDesde(o.fecha_estatus_desde);
-    if (dias === null) continue;
-    if (dias > 20) rojo++;
-    else if (dias >= 10) naranja++;
+    if (dias === null || dias <= 2) continue;
+    if (dias <= 4) verde++;
+    else if (dias <= 9) amarillo++;
+    else if (dias <= 20) naranja++;
+    else rojo++;
   }
 
   // --- Días cerrados (todas las órdenes de ese día ya en estatus terminal) ---
@@ -117,8 +121,10 @@ export async function POST(req: NextRequest) {
 
   // --- Componer y enviar el mensaje ---
   let mensaje = `📦 Seguimiento de logística (${fechaReporteMax || "hoy"}):\n`;
-  mensaje += `🟠 Naranja (10-20 días sin mov.): ${naranja}\n`;
-  mensaje += `🔴 Rojo (+20 días sin mov.): ${rojo}`;
+  mensaje += `🟢 Verde (2-4 días): ${verde}\n`;
+  mensaje += `🟡 Amarillo (5-9 días): ${amarillo}\n`;
+  mensaje += `🟠 Naranja (10-20 días): ${naranja}\n`;
+  mensaje += `🔴 Rojo (+20 días): ${rojo}`;
   if (nuevosCerrados.length > 0) {
     mensaje += `\n\n✅ Día(s) recién cerrado(s), ya no necesitan seguimiento:\n`;
     mensaje += nuevosCerrados.map((f) => `- ${f}`).join("\n");
@@ -126,5 +132,5 @@ export async function POST(req: NextRequest) {
 
   const resultadoEnvio = await sendWhatsApp(mensaje);
 
-  return NextResponse.json({ rojo, naranja, nuevosCerrados, mensaje, resultadoEnvio });
+  return NextResponse.json({ verde, amarillo, naranja, rojo, nuevosCerrados, mensaje, resultadoEnvio });
 }

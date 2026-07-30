@@ -267,7 +267,7 @@ export default function UploadPage() {
                   {notifInfo.resultadoEnvio?.skipped
                     ? `⚠️ WhatsApp no configurado: ${notifInfo.resultadoEnvio.reason}`
                     : notifInfo.resultadoEnvio?.ok
-                    ? `📲 Notificación de WhatsApp enviada (🟠 ${notifInfo.naranja} / 🔴 ${notifInfo.rojo}).`
+                    ? `📲 Notificación de WhatsApp enviada (🟢 ${notifInfo.verde} / 🟡 ${notifInfo.amarillo} / 🟠 ${notifInfo.naranja} / 🔴 ${notifInfo.rojo}).`
                     : "⚠️ No se pudo enviar la notificación de WhatsApp."}
                 </p>
                 <p style={{ color: "#64748b", fontSize: 12, marginTop: 4 }}>
