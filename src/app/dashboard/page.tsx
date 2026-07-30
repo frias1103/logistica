@@ -138,6 +138,25 @@ function EstatusTab({ data }: any) {
 }
 
 function TransportadorasTab({ data }: any) {
+  // Agrupamos por ciudad (de mayor a menor volumen), y dentro de cada ciudad
+  // ordenamos las transportadoras usadas ahí, también de mayor a menor.
+  const ciudadGroups = new Map<string, { total: number; rows: any[] }>();
+  for (const t of data.transportadoraCiudad) {
+    if (!ciudadGroups.has(t.ciudad)) {
+      ciudadGroups.set(t.ciudad, { total: 0, rows: [] });
+    }
+    const g = ciudadGroups.get(t.ciudad)!;
+    g.total += t.total;
+    g.rows.push(t);
+  }
+  const groupedByCiudad = Array.from(ciudadGroups.entries())
+    .map(([ciudad, g]) => ({
+      ciudad,
+      total: g.total,
+      rows: [...g.rows].sort((a, b) => b.total - a.total),
+    }))
+    .sort((a, b) => b.total - a.total);
+
   return (
     <div>
       <h3 style={h3}>Efectividad por transportadora</h3>
@@ -156,17 +175,23 @@ function TransportadorasTab({ data }: any) {
       />
 
       <h3 style={h3}>Cruce transportadora × ciudad</h3>
-      <Table
-        headers={["Transportadora", "Ciudad", "Entregado", "Devolución", "En tránsito", "Total"]}
-        rows={data.transportadoraCiudad.map((t: any) => [
-          t.transportadora,
-          t.ciudad,
-          countPct(t.entregado, t.total),
-          countPct(t.devolucion, t.total),
-          countPct(t.en_transito, t.total),
-          t.total,
-        ])}
-      />
+      {groupedByCiudad.map((g) => (
+        <div key={g.ciudad} style={{ marginBottom: 20 }}>
+          <div style={{ fontWeight: 600, color: "#93c5fd", margin: "12px 0 6px" }}>
+            {g.ciudad} — {g.total} pedidos
+          </div>
+          <Table
+            headers={["Transportadora", "Entregado", "Devolución", "En tránsito", "Total"]}
+            rows={g.rows.map((t: any) => [
+              t.transportadora,
+              countPct(t.entregado, t.total),
+              countPct(t.devolucion, t.total),
+              countPct(t.en_transito, t.total),
+              t.total,
+            ])}
+          />
+        </div>
+      ))}
     </div>
   );
 }
@@ -189,33 +214,68 @@ function DineroTab({ data }: any) {
 }
 
 function ProductoTab({ data }: any) {
+  const productos = data.productoResumen; // ya viene ordenado de mayor a menor total
+  const [selected, setSelected] = useState<string>("__todos__");
+
+  const grouped = new Map<string, any[]>();
+  for (const pc of data.productoCiudad) {
+    if (!grouped.has(pc.producto)) grouped.set(pc.producto, []);
+    grouped.get(pc.producto)!.push(pc);
+  }
+
+  const productosAMostrar =
+    selected === "__todos__" ? productos : productos.filter((p: any) => p.producto === selected);
+
   return (
     <div>
       <h3 style={h3}>Por producto</h3>
       <Table
         headers={["Producto", "Entregado", "Devolución", "Cancelado", "En tránsito", "Total"]}
-        rows={data.productoResumen.map((p: any) => [
+        rows={productos.map((p: any) => [
           p.producto,
-          p.entregado,
-          p.devolucion,
-          p.cancelado,
-          p.en_transito,
+          countPct(p.entregado, p.total),
+          countPct(p.devolucion, p.total),
+          countPct(p.cancelado, p.total),
+          countPct(p.en_transito, p.total),
           p.total,
         ])}
       />
 
-      <h3 style={h3}>Cruce producto × ciudad</h3>
-      <Table
-        headers={["Producto", "Ciudad", "Entregado", "Devolución", "Cancelado", "En tránsito"]}
-        rows={data.productoCiudad.map((p: any) => [
-          p.producto,
-          p.ciudad,
-          p.entregado,
-          p.devolucion,
-          p.cancelado,
-          p.en_transito,
-        ])}
-      />
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "24px 0 12px" }}>
+        <h3 style={{ ...h3, margin: 0 }}>Cruce producto × ciudad</h3>
+        <select value={selected} onChange={(e) => setSelected(e.target.value)} style={selectStyle}>
+          <option value="__todos__">Todos los productos</option>
+          {productos.map((p: any) => (
+            <option key={p.producto} value={p.producto}>
+              {p.producto}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {productosAMostrar.map((p: any) => {
+        const rows = (grouped.get(p.producto) || [])
+          .map((c: any) => ({ ...c, total: c.entregado + c.devolucion + c.cancelado + c.en_transito }))
+          .sort((a: any, b: any) => b.total - a.total);
+        return (
+          <div key={p.producto} style={{ marginBottom: 20 }}>
+            <div style={{ fontWeight: 600, color: "#93c5fd", margin: "12px 0 6px" }}>
+              {p.producto} — {p.total} pedidos
+            </div>
+            <Table
+              headers={["Ciudad", "Entregado", "Devolución", "Cancelado", "En tránsito", "Total"]}
+              rows={rows.map((c: any) => [
+                c.ciudad,
+                countPct(c.entregado, c.total),
+                countPct(c.devolucion, c.total),
+                countPct(c.cancelado, c.total),
+                countPct(c.en_transito, c.total),
+                c.total,
+              ])}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -379,4 +439,13 @@ const secondaryBtn: React.CSSProperties = {
   border: "1px solid #334155",
   borderRadius: 8,
   cursor: "pointer",
+};
+
+const selectStyle: React.CSSProperties = {
+  padding: "6px 10px",
+  background: "#1e293b",
+  color: "#e2e8f0",
+  border: "1px solid #334155",
+  borderRadius: 8,
+  fontSize: 13,
 };
