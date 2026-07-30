@@ -279,7 +279,7 @@ export async function GET(req: NextRequest) {
   }
   const productoCiudadTransportadora = Array.from(productoCiudadTransMap.values());
 
-  // =========================================================
+ // =========================================================
   // 5. PRODUCTIVIDAD DEL EQUIPO
   // =========================================================
   const guiasPorUsuarioDia = new Map<string, number>();
@@ -304,6 +304,37 @@ export async function GET(req: NextRequest) {
     .map(([vendedor, cantidad]) => ({ vendedor, cantidad }))
     .sort((a, b) => b.cantidad - a.cantidad);
 
+  // Fecha del reporte más reciente en el historial (mismo criterio que Seguimiento)
+  const fechaReporteMaxProductividad = orders!.reduce((max: string | null, o: any) => {
+    if (!o.fecha_reporte) return max;
+    if (!max || o.fecha_reporte > max) return o.fecha_reporte;
+    return max;
+  }, null as string | null);
+
+  // Confirmadas HOY (el vendedor de la orden cambió/se asignó en el último reporte)
+  const vendedorHoyMap = new Map<string, number>();
+  for (const o of orders!) {
+    if (!o.fecha_vendedor_desde || o.fecha_vendedor_desde !== fechaReporteMaxProductividad) continue;
+    const v = o.vendedor && o.vendedor.trim() ? o.vendedor.trim() : "SIN VENDEDOR ASIGNADO";
+    vendedorHoyMap.set(v, (vendedorHoyMap.get(v) || 0) + 1);
+  }
+  const confirmacionesPorVendedorHoy = Array.from(vendedorHoyMap.entries())
+    .map(([vendedor, cantidad]) => ({ vendedor, cantidad }))
+    .sort((a, b) => b.cantidad - a.cantidad);
+
+  // Confirmadas por día (histórico, día por día, desde que existe fecha_vendedor_desde)
+  const vendedorPorDiaMap = new Map<string, number>();
+  for (const o of orders!) {
+    if (!o.vendedor || !o.vendedor.trim() || !o.fecha_vendedor_desde) continue;
+    const key = `${o.vendedor.trim()}__${o.fecha_vendedor_desde}`;
+    vendedorPorDiaMap.set(key, (vendedorPorDiaMap.get(key) || 0) + 1);
+  }
+  const confirmacionesPorVendedorPorDia = Array.from(vendedorPorDiaMap.entries())
+    .map(([key, cantidad]) => {
+      const [vendedor, fecha] = key.split("__");
+      return { vendedor, fecha, cantidad };
+    })
+    .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
   // =========================================================
   // 6. SEGUIMIENTO POR TAGS (ANTICIPO PAGADO, ENVIO A OFICINA)
   // =========================================================
@@ -441,7 +472,7 @@ export async function GET(req: NextRequest) {
     grupos,
   };
 
-  return NextResponse.json({
+return NextResponse.json({
     total,
     porEstatus,
     buckets: bucketsResumen,
@@ -454,6 +485,9 @@ export async function GET(req: NextRequest) {
     productoCiudadTransportadora,
     guiasPorUsuarioPorDia,
     confirmacionesPorVendedor,
+    confirmacionesPorVendedorHoy,
+    confirmacionesPorVendedorPorDia,
+    fechaReporteMaxProductividad,
     tagsResumen,
     seguimiento,
   });
