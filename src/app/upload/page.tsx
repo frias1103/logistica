@@ -58,6 +58,7 @@ export default function UploadPage() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
+  const [notifInfo, setNotifInfo] = useState<any>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -151,6 +152,21 @@ export default function UploadPage() {
 
       setProgress(null);
       setResult(totals);
+
+      // Enviar notificación de WhatsApp (silenciosamente; si falla, no afecta la subida)
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData.session) {
+          const notifRes = await fetch("/api/send-notifications", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
+          });
+          const notifJson = await notifRes.json();
+          setNotifInfo(notifJson);
+        }
+      } catch {
+        // silencioso: la subida ya se completó bien, la notificación es un extra
+      }
     } catch (err: any) {
       setProgress(null);
       setError(err.message || "Ocurrió un error leyendo los archivos.");
@@ -243,6 +259,15 @@ export default function UploadPage() {
               <p style={{ color: "#fbbf24", marginTop: 12 }}>
                 ⚠️ Las filas leídas y las procesadas no coinciden — revisa el
                 archivo o avísame.
+              </p>
+            )}
+            {notifInfo && (
+              <p style={{ color: "#94a3b8", marginTop: 12, fontSize: 13 }}>
+                {notifInfo.resultadoEnvio?.skipped
+                  ? `⚠️ WhatsApp no configurado: ${notifInfo.resultadoEnvio.reason}`
+                  : notifInfo.resultadoEnvio?.ok
+                  ? `📲 Notificación de WhatsApp enviada (🟠 ${notifInfo.naranja} / 🔴 ${notifInfo.rojo}).`
+                  : "⚠️ No se pudo enviar la notificación de WhatsApp."}
               </p>
             )}
           </div>

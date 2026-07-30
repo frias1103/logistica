@@ -78,6 +78,7 @@ export async function POST(req: NextRequest) {
         estatus_actual: estatusNuevo,
         fecha_estatus_desde: fechaEstatusDesde,
         fecha_reporte: fechaReporte,
+        fecha_orden: toISODate(row["FECHA"]),
         nombre_cliente: row["NOMBRE CLIENTE"] || null,
         telefono: row["TELÉFONO"] ? String(row["TELÉFONO"]) : null,
         ciudad_destino: row["CIUDAD DESTINO"] || null,
