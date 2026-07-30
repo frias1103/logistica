@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     const ids = generalRows.map((r) => String(r["ID"])).filter(Boolean);
     const { data: existing, error: fetchError } = await supabase
       .from("order_status_history")
-      .select("id, estatus_actual, fecha_estatus_desde")
+      .select("id, estatus_actual, fecha_estatus_desde, vendedor, fecha_vendedor_desde")
       .in("id", ids);
 
     if (fetchError) {
@@ -73,6 +73,18 @@ export async function POST(req: NextRequest) {
         fechaEstatusDesde = prev.fecha_estatus_desde || fechaReporte;
       }
 
+      const vendedorNuevo = String(row["VENDEDOR"] || "").trim();
+      const vendedorPrev = (prev?.vendedor || "").trim();
+
+      let fechaVendedorDesde: string | null;
+      if (!prev) {
+        fechaVendedorDesde = vendedorNuevo ? fechaReporte : null;
+      } else if (vendedorPrev.toUpperCase() !== vendedorNuevo.toUpperCase()) {
+        fechaVendedorDesde = vendedorNuevo ? fechaReporte : null;
+      } else {
+        fechaVendedorDesde = prev.fecha_vendedor_desde || fechaReporte;
+      }
+
       return {
         id,
         estatus_actual: estatusNuevo,
@@ -86,6 +98,7 @@ export async function POST(req: NextRequest) {
         numero_guia: row["NÚMERO GUIA"] ? String(row["NÚMERO GUIA"]) : null,
         transportadora: row["TRANSPORTADORA"] || null,
         vendedor: row["VENDEDOR"] || null,
+        fecha_vendedor_desde: fechaVendedorDesde,
         usuario_generacion_guia: row["USUARIO GENERACION DE GUIA"] || null,
         fecha_generacion_guia: toISODate(row["FECHA GENERACION DE GUIA"]),
         ultimo_movimiento: row["ÚLTIMO MOVIMIENTO"] || null,
