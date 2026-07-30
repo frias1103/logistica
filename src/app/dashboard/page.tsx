@@ -521,15 +521,36 @@ function ProductoTab({ data }: any) {
 function ProductividadTab({ data }: any) {
   return (
     <div>
+      <h3 style={h3}>Confirmadas hoy — {formatFecha(data.fechaReporteMaxProductividad)}</h3>
+      {data.confirmacionesPorVendedorHoy.length === 0 ? (
+        <p style={{ color: "#64748b", fontSize: 13, marginBottom: 24 }}>
+          Nadie confirmó órdenes nuevas en el último reporte cargado.
+        </p>
+      ) : (
+        <div style={{ marginBottom: 32 }}>
+          <Table
+            headers={["Vendedor", "Órdenes confirmadas hoy"]}
+            rows={data.confirmacionesPorVendedorHoy.map((v: any) => [v.vendedor, v.cantidad])}
+          />
+        </div>
+      )}
+
       <h3 style={h3}>Órdenes confirmadas por vendedor (histórico acumulado)</h3>
-      <p style={{ color: "#64748b", fontSize: 13, marginBottom: 12 }}>
-        Nota: este número es acumulado histórico, no por día — el archivo no
-        trae la fecha exacta en que cada vendedor confirmó. Para tenerlo por
-        día necesitamos activar la comparación de snapshots (Idea 1).
-      </p>
+      <div style={{ marginBottom: 32 }}>
+        <Table
+          headers={["Vendedor", "Órdenes confirmadas"]}
+          rows={data.confirmacionesPorVendedor.map((v: any) => [v.vendedor, v.cantidad])}
+        />
+      </div>
+
+      <h3 style={h3}>Historial día por día</h3>
       <Table
-        headers={["Vendedor", "Órdenes confirmadas"]}
-        rows={data.confirmacionesPorVendedor.map((v: any) => [v.vendedor, v.cantidad])}
+        headers={["Fecha", "Vendedor", "Órdenes confirmadas"]}
+        rows={data.confirmacionesPorVendedorPorDia.map((v: any) => [
+          formatFecha(v.fecha),
+          v.vendedor,
+          v.cantidad,
+        ])}
       />
     </div>
   );
