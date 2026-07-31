@@ -446,7 +446,6 @@ export async function GET(req: NextRequest) {
     const dias = diasDesde(o.fecha_estatus_desde);
     if (dias === null || dias <= 2) continue;
 
-    if (!seguimientoGruposMap.has(estatus)) seguimientoGruposMap.set(estatus, []);
     seguimientoGruposMap.get(estatus)!.push({
       id: o.id,
       nombre_cliente: o.nombre_cliente,
@@ -455,8 +454,8 @@ export async function GET(req: NextRequest) {
       numero_guia: o.numero_guia,
       dias,
       fecha_estatus_desde: o.fecha_estatus_desde,
+      fecha_reportado: o.fecha_reportado || null,
     });
-  }
 
   const resumenPorEstatus = Array.from(seguimientoGruposMap.entries())
     .map(([estatus, ords]) => ({
