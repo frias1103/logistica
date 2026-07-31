@@ -342,11 +342,12 @@ export async function GET(req: NextRequest) {
     .map(([vendedor, cantidad]) => ({ vendedor, cantidad }))
     .sort((a, b) => b.cantidad - a.cantidad);
 
-  // Confirmadas por día (histórico, día por día, desde que existe fecha_vendedor_desde)
+// Confirmadas por día (histórico, día por día, desde que existe fecha_vendedor_desde)
   const vendedorPorDiaMap = new Map<string, number>();
   for (const o of orders!) {
-    if (!o.vendedor || !o.vendedor.trim() || !o.fecha_vendedor_desde) continue;
-    const key = `${o.vendedor.trim()}__${o.fecha_vendedor_desde}`;
+    if (!o.fecha_vendedor_desde) continue;
+    const v = o.vendedor && o.vendedor.trim() ? o.vendedor.trim() : "SIN VENDEDOR ASIGNADO";
+    const key = `${v}__${o.fecha_vendedor_desde}`;
     vendedorPorDiaMap.set(key, (vendedorPorDiaMap.get(key) || 0) + 1);
   }
   const confirmacionesPorVendedorPorDia = Array.from(vendedorPorDiaMap.entries())
