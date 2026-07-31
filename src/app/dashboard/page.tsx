@@ -417,11 +417,17 @@ function DineroTab({ data }: any) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
         <MoneyCard label="💰 Ganancia realizada (entregado)" value={d.entregado.suma} count={d.entregado.cantidad} color="#22c55e" />
         <MoneyCard label="🚚 Ganancia en camino (en tránsito)" value={d.en_transito.suma} count={d.en_transito.cantidad} color="#3b82f6" />
+        <MoneyCard label="📦 Próximo a entregar (1-2 días)" value={d.proximo_a_entregar.suma} count={d.proximo_a_entregar.cantidad} color="#a855f7" />
         <MoneyCard label="🔁 Ajuste por devoluciones" value={d.devolucion.suma} count={d.devolucion.cantidad} color="#f97316" />
       </div>
       <p style={{ color: "#64748b", fontSize: 13, marginTop: 20 }}>
         Ganancia = Valor de compra en productos − Precio flete − Total precios proveedor
         (en devoluciones, además se resta el costo de flete de devolución).
+        <br />
+        "Próximo a entregar" suma las órdenes en estatus: en reparto, en bodega destino,
+        intento de entrega, reclame en oficina, en punto droop, en terminal destino,
+        en bodega transportadora y en procesamiento — ya está incluido dentro del total
+        "en tránsito", es un subconjunto para ver qué tan cerca está de cobrarse.
       </p>
     </div>
   );
