@@ -96,7 +96,16 @@ export default function DashboardPage() {
   }
 
   if (!data) return null;
-
+function actualizarFechaReportado(id: string, fecha: string | null) {
+    setData((prev: any) => {
+      if (!prev) return prev;
+      const nuevosGrupos = prev.seguimiento.grupos.map((g: any) => ({
+        ...g,
+        ordenes: g.ordenes.map((o: any) => (o.id === id ? { ...o, fecha_reportado: fecha } : o)),
+      }));
+      return { ...prev, seguimiento: { ...prev.seguimiento, grupos: nuevosGrupos } };
+    });
+  }
   const tabs: { key: Tab; label: string }[] = [
     { key: "seguimiento", label: "Seguimiento" },
     { key: "estatus", label: "Estatus" },
@@ -131,7 +140,9 @@ export default function DashboardPage() {
         ))}
       </div>
 
-     {tab === "seguimiento" && <SeguimientoTab data={data} token={token} />}
+     {tab === "seguimiento" && (
+        <SeguimientoTab data={data} token={token} onMarcar={actualizarFechaReportado} />
+      )}
       {tab === "estatus" && <EstatusTab data={data} />}
       {tab === "transportadoras" && <TransportadorasTab data={data} />}
       {tab === "dinero" && <DineroTab data={data} />}
@@ -151,7 +162,7 @@ function diasEntre(fechaDesde: string | null, fechaHasta: string | null) {
   return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function SeguimientoTab({ data, token }: any) {
+function SeguimientoTab({ data, token, onMarcar }: any) {
   const s = data.seguimiento;
   const [selected, setSelected] = useState<string>("__todos__");
   const [orden, setOrden] = useState<"desc" | "asc">("desc"); // desc = más viejas primero
@@ -197,7 +208,14 @@ function SeguimientoTab({ data, token }: any) {
       </div>
 
       {gruposAMostrar.map((g: any) => (
-        <GrupoSeguimiento key={g.estatus} grupo={g} orden={orden} token={token} fechaHoy={s.fechaReporte} />
+        <GrupoSeguimiento
+          key={g.estatus}
+          grupo={g}
+          orden={orden}
+          token={token}
+          fechaHoy={s.fechaReporte}
+          onMarcar={onMarcar}
+        />
       ))}
     </div>
   );
@@ -208,16 +226,16 @@ function GrupoSeguimiento({
   orden,
   token,
   fechaHoy,
+  onMarcar,
 }: {
   grupo: any;
   orden: "asc" | "desc";
   token: string;
   fechaHoy: string;
+  onMarcar: (id: string, fecha: string | null) => void;
 }) {
   const [page, setPage] = useState(0);
   const [copiado, setCopiado] = useState(false);
-  // Sobrescribe localmente fecha_reportado sin esperar a recargar todo el dashboard
-  const [overrides, setOverrides] = useState<Record<string, string | null>>({});
 
   const ordenes = orden === "asc" ? [...grupo.ordenes].reverse() : grupo.ordenes;
   const totalPaginas = Math.max(1, Math.ceil(ordenes.length / SEGUIMIENTO_PAGE_SIZE));
@@ -250,8 +268,8 @@ function GrupoSeguimiento({
     URL.revokeObjectURL(url);
   }
 
-  async function marcarReportado(id: string, fecha: string | null) {
-    setOverrides((prev) => ({ ...prev, [id]: fecha }));
+async function marcarReportado(id: string, fecha: string | null) {
+    onMarcar(id, fecha);
     try {
       await fetch("/api/marcar-reportado", {
         method: "POST",
@@ -334,8 +352,7 @@ function GrupoSeguimiento({
           </thead>
           <tbody>
             {visibles.map((o: any) => {
-              const fechaReportado =
-                overrides[o.id] !== undefined ? overrides[o.id] : o.fecha_reportado;
+             const fechaReportado = o.fecha_reportado;
               const diasReportado = diasEntre(fechaReportado, fechaHoy);
               return (
                 <tr key={o.id} style={{ background: colorForDias(o.dias) }}>
