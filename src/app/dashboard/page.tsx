@@ -54,19 +54,21 @@ export default function DashboardPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const [checkingAuth, setCheckingAuth] = useState(true);
+ const [checkingAuth, setCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
   const [tab, setTab] = useState<Tab>("seguimiento");
-
+  const [token, setToken] = useState<string>("");
+  
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: sessionData }) => {
       if (!sessionData.session) {
         router.replace("/login");
         return;
       }
-      setCheckingAuth(false);
+     setCheckingAuth(false);
+      setToken(sessionData.session.access_token);
       try {
         const res = await fetch("/api/dashboard-data", {
           headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
@@ -129,7 +131,7 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {tab === "seguimiento" && <SeguimientoTab data={data} />}
+     {tab === "seguimiento" && <SeguimientoTab data={data} token={token} />}
       {tab === "estatus" && <EstatusTab data={data} />}
       {tab === "transportadoras" && <TransportadorasTab data={data} />}
       {tab === "dinero" && <DineroTab data={data} />}
@@ -142,7 +144,14 @@ export default function DashboardPage() {
 
 const SEGUIMIENTO_PAGE_SIZE = 50;
 
-function SeguimientoTab({ data }: any) {
+function diasEntre(fechaDesde: string | null, fechaHasta: string | null) {
+  if (!fechaDesde || !fechaHasta) return null;
+  const a = new Date(fechaDesde + "T00:00:00");
+  const b = new Date(fechaHasta + "T00:00:00");
+  return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function SeguimientoTab({ data, token }: any) {
   const s = data.seguimiento;
   const [selected, setSelected] = useState<string>("__todos__");
   const [orden, setOrden] = useState<"desc" | "asc">("desc"); // desc = más viejas primero
@@ -188,14 +197,27 @@ function SeguimientoTab({ data }: any) {
       </div>
 
       {gruposAMostrar.map((g: any) => (
-        <GrupoSeguimiento key={g.estatus} grupo={g} orden={orden} />
+        <GrupoSeguimiento key={g.estatus} grupo={g} orden={orden} token={token} fechaHoy={s.fechaReporte} />
       ))}
     </div>
   );
 }
 
-function GrupoSeguimiento({ grupo, orden }: { grupo: any; orden: "asc" | "desc" }) {
+function GrupoSeguimiento({
+  grupo,
+  orden,
+  token,
+  fechaHoy,
+}: {
+  grupo: any;
+  orden: "asc" | "desc";
+  token: string;
+  fechaHoy: string;
+}) {
   const [page, setPage] = useState(0);
+  const [copiado, setCopiado] = useState(false);
+  // Sobrescribe localmente fecha_reportado sin esperar a recargar todo el dashboard
+  const [overrides, setOverrides] = useState<Record<string, string | null>>({});
 
   const ordenes = orden === "asc" ? [...grupo.ordenes].reverse() : grupo.ordenes;
   const totalPaginas = Math.max(1, Math.ceil(ordenes.length / SEGUIMIENTO_PAGE_SIZE));
@@ -204,6 +226,42 @@ function GrupoSeguimiento({ grupo, orden }: { grupo: any; orden: "asc" | "desc" 
     paginaActual * SEGUIMIENTO_PAGE_SIZE,
     paginaActual * SEGUIMIENTO_PAGE_SIZE + SEGUIMIENTO_PAGE_SIZE
   );
+
+  const guiasDelGrupo: string[] = grupo.ordenes.map((o: any) => o.numero_guia).filter(Boolean);
+
+  async function copiarGuias() {
+    try {
+      await navigator.clipboard.writeText(guiasDelGrupo.join("\n"));
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 1500);
+    } catch {
+      alert("No se pudo copiar automáticamente. Probá con el botón de descargar.");
+    }
+  }
+
+  function descargarGuias() {
+    const contenido = guiasDelGrupo.join("\n");
+    const blob = new Blob([contenido], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `guias_${grupo.estatus.replace(/\s+/g, "_")}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function marcarReportado(id: string, fecha: string | null) {
+    setOverrides((prev) => ({ ...prev, [id]: fecha }));
+    try {
+      await fetch("/api/marcar-reportado", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ id, fecha }),
+      });
+    } catch (err) {
+      console.error("Error marcando reportado:", err);
+    }
+  }
 
   return (
     <div style={{ marginBottom: 24 }}>
@@ -225,29 +283,41 @@ function GrupoSeguimiento({ grupo, orden }: { grupo: any; orden: "asc" | "desc" 
           {grupo.estatus} — {grupo.cantidad} pedidos — desde {formatFecha(grupo.desde)} hasta{" "}
           {formatFecha(grupo.hasta)}
         </span>
-        {totalPaginas > 1 && (
-          <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400, fontSize: 13 }}>
-            <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={paginaActual === 0}
-              style={{ ...secondaryBtn, padding: "4px 10px", opacity: paginaActual === 0 ? 0.4 : 1 }}
-            >
-              ← Anterior
-            </button>
-            Página {paginaActual + 1} de {totalPaginas}
-            <button
-              onClick={() => setPage((p) => Math.min(totalPaginas - 1, p + 1))}
-              disabled={paginaActual === totalPaginas - 1}
-              style={{
-                ...secondaryBtn,
-                padding: "4px 10px",
-                opacity: paginaActual === totalPaginas - 1 ? 0.4 : 1,
-              }}
-            >
-              Siguiente →
-            </button>
-          </span>
-        )}
+        <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400, fontSize: 13 }}>
+          {guiasDelGrupo.length > 0 && (
+            <>
+              <button onClick={copiarGuias} style={{ ...secondaryBtn, padding: "4px 10px" }}>
+                {copiado ? "¡Copiado!" : `Copiar ${guiasDelGrupo.length} guías`}
+              </button>
+              <button onClick={descargarGuias} style={{ ...secondaryBtn, padding: "4px 10px" }}>
+                Descargar .txt
+              </button>
+            </>
+          )}
+          {totalPaginas > 1 && (
+            <>
+              <button
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={paginaActual === 0}
+                style={{ ...secondaryBtn, padding: "4px 10px", opacity: paginaActual === 0 ? 0.4 : 1 }}
+              >
+                ← Anterior
+              </button>
+              Página {paginaActual + 1} de {totalPaginas}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPaginas - 1, p + 1))}
+                disabled={paginaActual === totalPaginas - 1}
+                style={{
+                  ...secondaryBtn,
+                  padding: "4px 10px",
+                  opacity: paginaActual === totalPaginas - 1 ? 0.4 : 1,
+                }}
+              >
+                Siguiente →
+              </button>
+            </>
+          )}
+        </span>
       </div>
       <div style={{ overflowX: "auto", background: "#1e293b", borderRadius: "0 0 10px 10px" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -259,19 +329,46 @@ function GrupoSeguimiento({ grupo, orden }: { grupo: any; orden: "asc" | "desc" 
               <th style={th}>Número guía</th>
               <th style={th}>Sin movimiento desde</th>
               <th style={th}>Días sin mov.</th>
+              <th style={th}>Reportado</th>
             </tr>
           </thead>
           <tbody>
-            {visibles.map((o: any) => (
-              <tr key={o.id} style={{ background: colorForDias(o.dias) }}>
-                <td style={td}>{o.nombre_cliente || "-"}</td>
-                <td style={td}>{o.telefono || "-"}</td>
-                <td style={td}>{o.ciudad_destino || "-"}</td>
-                <td style={td}>{o.numero_guia || "-"}</td>
-                <td style={td}>{formatFecha(o.fecha_estatus_desde)}</td>
-                <td style={td}>{o.dias}</td>
-              </tr>
-            ))}
+            {visibles.map((o: any) => {
+              const fechaReportado =
+                overrides[o.id] !== undefined ? overrides[o.id] : o.fecha_reportado;
+              const diasReportado = diasEntre(fechaReportado, fechaHoy);
+              return (
+                <tr key={o.id} style={{ background: colorForDias(o.dias) }}>
+                  <td style={td}>{o.nombre_cliente || "-"}</td>
+                  <td style={td}>{o.telefono || "-"}</td>
+                  <td style={td}>{o.ciudad_destino || "-"}</td>
+                  <td style={td}>{o.numero_guia || "-"}</td>
+                  <td style={td}>{formatFecha(o.fecha_estatus_desde)}</td>
+                  <td style={td}>{o.dias}</td>
+                  <td style={td}>
+                    {fechaReportado ? (
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                        {formatFecha(fechaReportado)}
+                        <span style={{ color: "#94a3b8" }}>({diasReportado}d)</span>
+                        <button
+                          onClick={() => marcarReportado(o.id, null)}
+                          style={{ ...secondaryBtn, padding: "2px 8px", fontSize: 11 }}
+                        >
+                          Quitar
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => marcarReportado(o.id, fechaHoy)}
+                        style={{ ...secondaryBtn, padding: "2px 8px", fontSize: 11 }}
+                      >
+                        Marcar hoy
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
