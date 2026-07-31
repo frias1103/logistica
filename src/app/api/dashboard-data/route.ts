@@ -172,6 +172,9 @@ export async function GET(req: NextRequest) {
   // =========================================================
   // 3. DINERO
   // =========================================================
+// =========================================================
+  // 3. DINERO
+  // =========================================================
   function ganancia(o: any, esDevolucion: boolean) {
     const venta = o.valor_compra_productos || 0;
     const flete = o.precio_flete || 0;
@@ -180,10 +183,23 @@ export async function GET(req: NextRequest) {
     return venta - flete - proveedor - fleteDevolucion;
   }
 
+  // Estatus que indican que la orden está a 1-2 días de entregarse
+  const ESTATUS_PROXIMOS_A_ENTREGAR = [
+    "EN REPARTO",
+    "EN BODEGA DESTINO",
+    "INTENTO DE ENTREGA",
+    "RECLAME EN OFICINA",
+    "EN PUNTO DROOP",
+    "EN TERMINAL DESTINO",
+    "EN BODEGA TRANSPORTADORA",
+    "EN PROCESAMIENTO",
+  ];
+
   const dinero = {
     entregado: { suma: 0, cantidad: 0 },
     en_transito: { suma: 0, cantidad: 0 },
     devolucion: { suma: 0, cantidad: 0 },
+    proximo_a_entregar: { suma: 0, cantidad: 0 },
   };
 
   for (const o of orders!) {
@@ -198,10 +214,17 @@ export async function GET(req: NextRequest) {
       dinero.devolucion.suma += ganancia(o, true);
       dinero.devolucion.cantidad++;
     }
+
+    const estatusUpper = (o.estatus_actual || "").trim().toUpperCase();
+    if (ESTATUS_PROXIMOS_A_ENTREGAR.includes(estatusUpper)) {
+      dinero.proximo_a_entregar.suma += ganancia(o, false);
+      dinero.proximo_a_entregar.cantidad++;
+    }
   }
   dinero.entregado.suma = Math.round(dinero.entregado.suma);
   dinero.en_transito.suma = Math.round(dinero.en_transito.suma);
   dinero.devolucion.suma = Math.round(dinero.devolucion.suma);
+  dinero.proximo_a_entregar.suma = Math.round(dinero.proximo_a_entregar.suma);
 
   // =========================================================
   // 4. PRODUCTO + CRUCE CON CIUDAD
