@@ -32,122 +32,123 @@ export async function POST(req: NextRequest) {
 
     const supabase = createAdminClient();
 
-  let nuevos = 0;
+    let nuevos = 0;
     let cambiaronEstatus = 0;
     let sinCambio = 0;
     let ignoradasPorFechaVieja = 0;
 
     if (generalRows.length > 0) {
-    // --- 1. Traer el estatus actual guardado para las órdenes que vienen en este lote ---
-    const ids = generalRows.map((r) => String(r["ID"])).filter(Boolean);
-    const { data: existing, error: fetchError } = await supabase
-      .from("order_status_history")
-      .select("id, estatus_actual, fecha_estatus_desde, vendedor, fecha_vendedor_desde, fecha_reporte")
-      .in("id", ids);
-
-    if (fetchError) {
-      return NextResponse.json({ error: fetchError.message }, { status: 500 });
-    }
-
-    const existingMap = new Map(
-      (existing || []).map((r) => [r.id, r])
-    );
-
-    const upsertRows = generalRows.map((row) => {
-      const id = String(row["ID"]);
-      const estatusNuevo = String(row["ESTATUS"] || "").trim();
-      const fechaReporte = toISODate(row["FECHA DE REPORTE"]);
-      const prev = existingMap.get(id);
-
-      // Protección: nunca pisar una orden con un reporte más viejo que el
-      // que ya tenemos guardado (evita retroceder el estatus si se sube
-      // un Excel de un día anterior después de uno más reciente)
-      if (prev && prev.fecha_reporte && fechaReporte && fechaReporte < prev.fecha_reporte) {
-        ignoradasPorFechaVieja++;
-        return null;
-      }
-
-      let fechaEstatusDesde: string | null;
-      if (!prev) {
-        nuevos++;
-        fechaEstatusDesde = fechaReporte;
-      } else if (
-        (prev.estatus_actual || "").trim().toUpperCase() !==
-        estatusNuevo.toUpperCase()
-      ) {
-        cambiaronEstatus++;
-        fechaEstatusDesde = fechaReporte;
-      } else {
-        sinCambio++;
-        fechaEstatusDesde = prev.fecha_estatus_desde || fechaReporte;
-      }
-
-      const vendedorNuevo = String(row["VENDEDOR"] || "").trim();
-      const vendedorPrev = (prev?.vendedor || "").trim();
-
-      let fechaVendedorDesde: string | null;
-      if (!prev) {
-        fechaVendedorDesde = vendedorNuevo ? fechaReporte : null;
-      } else if (vendedorPrev.toUpperCase() !== vendedorNuevo.toUpperCase()) {
-        fechaVendedorDesde = vendedorNuevo ? fechaReporte : null;
-      } else {
-        fechaVendedorDesde = prev.fecha_vendedor_desde || fechaReporte;
-      }
-
-      return {
-        id,
-        estatus_actual: estatusNuevo,
-        fecha_estatus_desde: fechaEstatusDesde,
-        fecha_reporte: fechaReporte,
-        fecha_orden: toISODate(row["FECHA"]),
-        nombre_cliente: row["NOMBRE CLIENTE"] || null,
-        telefono: row["TELÉFONO"] ? String(row["TELÉFONO"]) : null,
-        ciudad_destino: row["CIUDAD DESTINO"] || null,
-        departamento_destino: row["DEPARTAMENTO DESTINO"] || null,
-        numero_guia: row["NÚMERO GUIA"] ? String(row["NÚMERO GUIA"]) : null,
-        transportadora: row["TRANSPORTADORA"] || null,
-        vendedor: row["VENDEDOR"] || null,
-        fecha_vendedor_desde: fechaVendedorDesde,
-        usuario_generacion_guia: row["USUARIO GENERACION DE GUIA"] || null,
-        fecha_generacion_guia: toISODate(row["FECHA GENERACION DE GUIA"]),
-        ultimo_movimiento: row["ÚLTIMO MOVIMIENTO"] || null,
-        fecha_ultimo_movimiento: toISODate(row["FECHA DE ÚLTIMO MOVIMIENTO"]),
-        fecha_novedad: toISODate(row["FECHA DE NOVEDAD"]),
-        fecha_solucion: toISODate(row["FECHA DE SOLUCIÓN"]),
-        tags: row["TAGS"] || null,
-        valor_facturado: toNumber(row["VALOR FACTURADO"]),
-        valor_compra_productos: toNumber(row["VALOR DE COMPRA EN PRODUCTOS"]),
-        precio_flete: toNumber(row["PRECIO FLETE"]),
-        costo_devolucion_flete: toNumber(row["COSTO DEVOLUCION FLETE"]),
-        total_precios_proveedor: toNumber(row["TOTAL EN PRECIOS DE PROVEEDOR"]),
-        comision: toNumber(row["COMISION"]),
-        ganancia: toNumber(row["GANANCIA"]),
-        updated_at: new Date().toISOString(),
-      };
-    });
-
-    // Quitamos duplicados por ID dentro del mismo lote (Postgres no permite
-    // aplicar ON CONFLICT dos veces a la misma fila en una sola operación)
-    const dedupedMap = new Map<string, any>();
-    for (const r of upsertRows) {
-      if (r === null) continue; // fila ignorada por ser un reporte más viejo
-      dedupedMap.set(r.id, r);
-    }
-    const dedupedUpsertRows = Array.from(dedupedMap.values());
-
-    // Supabase/Postgres no acepta más de ~1000 filas por upsert de forma segura -> lotes de 500
-    for (let i = 0; i < dedupedUpsertRows.length; i += 500) {
-      const batch = dedupedUpsertRows.slice(i, i + 500);
-      const { error } = await supabase
+      const ids = generalRows.map((r) => String(r["ID"])).filter(Boolean);
+      const { data: existing, error: fetchError } = await supabase
         .from("order_status_history")
-        .upsert(batch, { onConflict: "id" });
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        .select(
+          "id, estatus_actual, fecha_estatus_desde, vendedor, fecha_vendedor_desde, fecha_reporte, fecha_reportado"
+        )
+        .in("id", ids);
+
+      if (fetchError) {
+        return NextResponse.json({ error: fetchError.message }, { status: 500 });
+      }
+
+      const existingMap = new Map<string, any>();
+      for (const row of existing || []) {
+        existingMap.set(row.id, row);
+      }
+
+      const upsertRows = generalRows.map((row) => {
+        const id = String(row["ID"]);
+        const estatusNuevo = String(row["ESTATUS"] || "").trim();
+        const fechaReporte = toISODate(row["FECHA DE REPORTE"]);
+        const prev = existingMap.get(id);
+
+        if (prev && prev.fecha_reporte && fechaReporte && fechaReporte < prev.fecha_reporte) {
+          ignoradasPorFechaVieja++;
+          return null;
+        }
+
+        let fechaEstatusDesde: string | null;
+        let estatusCambio = false;
+        if (!prev) {
+          nuevos++;
+          fechaEstatusDesde = fechaReporte;
+          estatusCambio = true;
+        } else if (
+          (prev.estatus_actual || "").trim().toUpperCase() !==
+          estatusNuevo.toUpperCase()
+        ) {
+          cambiaronEstatus++;
+          fechaEstatusDesde = fechaReporte;
+          estatusCambio = true;
+        } else {
+          sinCambio++;
+          fechaEstatusDesde = prev.fecha_estatus_desde || fechaReporte;
+        }
+
+        const fechaReportadoFinal = estatusCambio ? null : prev?.fecha_reportado ?? null;
+
+        const vendedorNuevo = String(row["VENDEDOR"] || "").trim();
+        const vendedorPrev = (prev?.vendedor || "").trim();
+
+        let fechaVendedorDesde: string | null;
+        if (!prev) {
+          fechaVendedorDesde = vendedorNuevo ? fechaReporte : null;
+        } else if (vendedorPrev.toUpperCase() !== vendedorNuevo.toUpperCase()) {
+          fechaVendedorDesde = vendedorNuevo ? fechaReporte : null;
+        } else {
+          fechaVendedorDesde = prev.fecha_vendedor_desde || fechaReporte;
+        }
+
+        return {
+          id,
+          estatus_actual: estatusNuevo,
+          fecha_estatus_desde: fechaEstatusDesde,
+          fecha_reporte: fechaReporte,
+          fecha_orden: toISODate(row["FECHA"]),
+          nombre_cliente: row["NOMBRE CLIENTE"] || null,
+          telefono: row["TELÉFONO"] ? String(row["TELÉFONO"]) : null,
+          ciudad_destino: row["CIUDAD DESTINO"] || null,
+          departamento_destino: row["DEPARTAMENTO DESTINO"] || null,
+          numero_guia: row["NÚMERO GUIA"] ? String(row["NÚMERO GUIA"]) : null,
+          transportadora: row["TRANSPORTADORA"] || null,
+          vendedor: row["VENDEDOR"] || null,
+          fecha_vendedor_desde: fechaVendedorDesde,
+          fecha_reportado: fechaReportadoFinal,
+          usuario_generacion_guia: row["USUARIO GENERACION DE GUIA"] || null,
+          fecha_generacion_guia: toISODate(row["FECHA GENERACION DE GUIA"]),
+          ultimo_movimiento: row["ÚLTIMO MOVIMIENTO"] || null,
+          fecha_ultimo_movimiento: toISODate(row["FECHA DE ÚLTIMO MOVIMIENTO"]),
+          fecha_novedad: toISODate(row["FECHA DE NOVEDAD"]),
+          fecha_solucion: toISODate(row["FECHA DE SOLUCIÓN"]),
+          tags: row["TAGS"] || null,
+          valor_facturado: toNumber(row["VALOR FACTURADO"]),
+          valor_compra_productos: toNumber(row["VALOR DE COMPRA EN PRODUCTOS"]),
+          precio_flete: toNumber(row["PRECIO FLETE"]),
+          costo_devolucion_flete: toNumber(row["COSTO DEVOLUCION FLETE"]),
+          total_precios_proveedor: toNumber(row["TOTAL EN PRECIOS DE PROVEEDOR"]),
+          comision: toNumber(row["COMISION"]),
+          ganancia: toNumber(row["GANANCIA"]),
+          updated_at: new Date().toISOString(),
+        };
+      });
+
+      const dedupedMap = new Map<string, any>();
+      for (const r of upsertRows) {
+        if (r === null) continue;
+        dedupedMap.set(r.id, r);
+      }
+      const dedupedUpsertRows = Array.from(dedupedMap.values());
+
+      for (let i = 0; i < dedupedUpsertRows.length; i += 500) {
+        const batch = dedupedUpsertRows.slice(i, i + 500);
+        const { error } = await supabase
+          .from("order_status_history")
+          .upsert(batch, { onConflict: "id" });
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
       }
     }
-    } // fin if (generalRows.length > 0)
 
-    // --- 2. Productos (si se subió el archivo de productos) ---
     let productosActualizados = 0;
     if (productRows.length > 0) {
       const productUpsert = productRows
@@ -162,8 +163,6 @@ export async function POST(req: NextRequest) {
           updated_at: new Date().toISOString(),
         }));
 
-      // Quitamos duplicados por (order_id, sku) dentro del mismo lote, por la
-      // misma razón que arriba
       const productDedupedMap = new Map<string, any>();
       for (const r of productUpsert) {
         productDedupedMap.set(`${r.order_id}__${r.sku}`, r);
@@ -182,7 +181,7 @@ export async function POST(req: NextRequest) {
       productosActualizados = dedupedProductUpsert.length;
     }
 
-   return NextResponse.json({
+    return NextResponse.json({
       totalProcesado: generalRows.length,
       nuevos,
       cambiaronEstatus,
@@ -190,9 +189,6 @@ export async function POST(req: NextRequest) {
       ignoradasPorFechaVieja,
       productosActualizados,
     });
-    // Nota: esta ruta procesa un LOTE (batch) del archivo, no el archivo completo.
-    // El cliente (upload/page.tsx) se encarga de dividir el archivo en lotes
-    // y de sumar los resultados de cada llamada.
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || "Error desconocido" },
