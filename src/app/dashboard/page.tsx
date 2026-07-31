@@ -140,9 +140,12 @@ export default function DashboardPage() {
   );
 }
 
+const SEGUIMIENTO_PAGE_SIZE = 50;
+
 function SeguimientoTab({ data }: any) {
   const s = data.seguimiento;
   const [selected, setSelected] = useState<string>("__todos__");
+  const [orden, setOrden] = useState<"desc" | "asc">("desc"); // desc = más viejas primero
 
   const gruposAMostrar =
     selected === "__todos__" ? s.grupos : s.grupos.filter((g: any) => g.estatus === selected);
@@ -167,7 +170,7 @@ function SeguimientoTab({ data }: any) {
         ])}
       />
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "24px 0 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "24px 0 12px", flexWrap: "wrap" }}>
         <h3 style={{ ...h3, margin: 0 }}>Detalle por estatus</h3>
         <select value={selected} onChange={(e) => setSelected(e.target.value)} style={selectStyle}>
           <option value="__todos__">Todos los estatus</option>
@@ -177,51 +180,104 @@ function SeguimientoTab({ data }: any) {
             </option>
           ))}
         </select>
+        <span style={{ color: "#94a3b8", fontSize: 13 }}>Ordenar por:</span>
+        <select value={orden} onChange={(e) => setOrden(e.target.value as "desc" | "asc")} style={selectStyle}>
+          <option value="desc">Más días sin mover primero</option>
+          <option value="asc">Menos días sin mover primero</option>
+        </select>
       </div>
 
       {gruposAMostrar.map((g: any) => (
-        <div key={g.estatus} style={{ marginBottom: 24 }}>
-          <div
-            style={{
-              background: "#334155",
-              color: "white",
-              fontWeight: 600,
-              padding: "10px 14px",
-              borderRadius: "8px 8px 0 0",
-            }}
-          >
-            {g.estatus} — {g.cantidad} pedidos — desde {formatFecha(g.desde)} hasta {formatFecha(g.hasta)}
-          </div>
-          <div style={{ overflowX: "auto", background: "#1e293b", borderRadius: "0 0 10px 10px" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead>
-                <tr>
-                  <th style={th}>Cliente</th>
-                  <th style={th}>Teléfono</th>
-                  <th style={th}>Ciudad</th>
-                  <th style={th}>Número guía</th>
-                  <th style={th}>Días sin mov.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {g.ordenes.map((o: any) => (
-                  <tr key={o.id} style={{ background: colorForDias(o.dias) }}>
-                    <td style={td}>{o.nombre_cliente || "-"}</td>
-                    <td style={td}>{o.telefono || "-"}</td>
-                    <td style={td}>{o.ciudad_destino || "-"}</td>
-                    <td style={td}>{o.numero_guia || "-"}</td>
-                    <td style={td}>{o.dias}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <GrupoSeguimiento key={g.estatus} grupo={g} orden={orden} />
       ))}
     </div>
   );
 }
 
+function GrupoSeguimiento({ grupo, orden }: { grupo: any; orden: "asc" | "desc" }) {
+  const [page, setPage] = useState(0);
+
+  const ordenes = orden === "asc" ? [...grupo.ordenes].reverse() : grupo.ordenes;
+  const totalPaginas = Math.max(1, Math.ceil(ordenes.length / SEGUIMIENTO_PAGE_SIZE));
+  const paginaActual = Math.min(page, totalPaginas - 1);
+  const visibles = ordenes.slice(
+    paginaActual * SEGUIMIENTO_PAGE_SIZE,
+    paginaActual * SEGUIMIENTO_PAGE_SIZE + SEGUIMIENTO_PAGE_SIZE
+  );
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div
+        style={{
+          background: "#334155",
+          color: "white",
+          fontWeight: 600,
+          padding: "10px 14px",
+          borderRadius: "8px 8px 0 0",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 8,
+        }}
+      >
+        <span>
+          {grupo.estatus} — {grupo.cantidad} pedidos — desde {formatFecha(grupo.desde)} hasta{" "}
+          {formatFecha(grupo.hasta)}
+        </span>
+        {totalPaginas > 1 && (
+          <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400, fontSize: 13 }}>
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={paginaActual === 0}
+              style={{ ...secondaryBtn, padding: "4px 10px", opacity: paginaActual === 0 ? 0.4 : 1 }}
+            >
+              ← Anterior
+            </button>
+            Página {paginaActual + 1} de {totalPaginas}
+            <button
+              onClick={() => setPage((p) => Math.min(totalPaginas - 1, p + 1))}
+              disabled={paginaActual === totalPaginas - 1}
+              style={{
+                ...secondaryBtn,
+                padding: "4px 10px",
+                opacity: paginaActual === totalPaginas - 1 ? 0.4 : 1,
+              }}
+            >
+              Siguiente →
+            </button>
+          </span>
+        )}
+      </div>
+      <div style={{ overflowX: "auto", background: "#1e293b", borderRadius: "0 0 10px 10px" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th style={th}>Cliente</th>
+              <th style={th}>Teléfono</th>
+              <th style={th}>Ciudad</th>
+              <th style={th}>Número guía</th>
+              <th style={th}>Sin movimiento desde</th>
+              <th style={th}>Días sin mov.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibles.map((o: any) => (
+              <tr key={o.id} style={{ background: colorForDias(o.dias) }}>
+                <td style={td}>{o.nombre_cliente || "-"}</td>
+                <td style={td}>{o.telefono || "-"}</td>
+                <td style={td}>{o.ciudad_destino || "-"}</td>
+                <td style={td}>{o.numero_guia || "-"}</td>
+                <td style={td}>{formatFecha(o.fecha_estatus_desde)}</td>
+                <td style={td}>{o.dias}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 function EstatusTab({ data }: any) {
   const b = data.buckets;
   const [selected, setSelected] = useState<string>("__todas__");
