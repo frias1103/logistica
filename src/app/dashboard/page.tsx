@@ -124,8 +124,16 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
           Ir a subir archivos
         </button>
       </div>
-      <p style={{ color: "#94a3b8", marginBottom: 24 }}>
-        {data.total} órdenes en total en el historial guardado.
+   <p style={{ color: "#94a3b8", marginBottom: 24 }}>
+        {data.total} órdenes en total en el historial guardado
+        {data.huerfanas > 0 && (
+          <span>
+            {" "}
+            ({data.totalActivo} activas — se excluyen {data.huerfanas} que dejaron de
+            aparecer en los reportes sin llegar a un estatus final)
+          </span>
+        )}
+        .
       </p>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
