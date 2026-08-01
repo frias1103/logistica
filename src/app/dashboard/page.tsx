@@ -461,6 +461,7 @@ function EstatusTab({ data }: any) {
 
 function TransportadorasTab({ data }: any) {
   const [selected, setSelected] = useState<string>("__todas__");
+  const [transporSeleccionada, setTransporSeleccionada] = useState<string>("__global__");
 
   const ciudadGroups = new Map<string, { total: number; rows: any[] }>();
   for (const t of data.transportadoraCiudad) {
@@ -482,11 +483,42 @@ function TransportadorasTab({ data }: any) {
   const gruposAMostrar =
     selected === "__todas__" ? groupedByCiudad : groupedByCiudad.filter((g) => g.ciudad === selected);
 
+  const histogramaAMostrar =
+    transporSeleccionada === "__global__"
+      ? data.fleteGlobal.histograma
+      : data.transportadoras.find((t: any) => t.transportadora === transporSeleccionada)?.histogramaFlete || [];
+
   return (
     <div>
+      <h3 style={h3}>Costo de flete de la operación</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 12 }}>
+        <StatCard label="Flete promedio" value={data.fleteGlobal.promedio} color="#3b82f6" />
+        <StatCard label="Flete mínimo" value={data.fleteGlobal.minimo} color="#22c55e" />
+        <StatCard label="Flete máximo" value={data.fleteGlobal.maximo} color="#f97316" />
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4, flexWrap: "wrap" }}>
+        <span style={{ color: "#94a3b8", fontSize: 13 }}>Distribución de:</span>
+        <select
+          value={transporSeleccionada}
+          onChange={(e) => setTransporSeleccionada(e.target.value)}
+          style={selectStyle}
+        >
+          <option value="__global__">Toda la operación</option>
+          {data.transportadoras.map((t: any) => (
+            <option key={t.transportadora} value={t.transportadora}>
+              {t.transportadora}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div style={{ background: "#1e293b", borderRadius: 10, padding: 16, marginBottom: 32 }}>
+        <HistogramaChart data={histogramaAMostrar} />
+      </div>
+
       <h3 style={h3}>Efectividad por transportadora</h3>
       <Table
-        headers={["Transportadora", "Enviados", "Entregados", "%", "Devueltos", "%", "En tránsito", "%"]}
+        headers={["Transportadora", "Enviados", "Entregados", "%", "Devueltos", "%", "En tránsito", "%", "Flete prom."]}
         rows={data.transportadoras.map((t: any) => [
           t.transportadora,
           t.enviados,
@@ -496,6 +528,7 @@ function TransportadorasTab({ data }: any) {
           `${t.devueltosPct}%`,
           t.enTransito,
           `${t.enTransitoPct}%`,
+          t.fleteProm !== null ? money(t.fleteProm) : "-",
         ])}
       />
 
@@ -528,6 +561,45 @@ function TransportadorasTab({ data }: any) {
           />
         </div>
       ))}
+    </div>
+  );
+}
+
+function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div style={{ background: "#1e293b", borderRadius: 10, padding: 16, borderLeft: `4px solid ${color}` }}>
+      <div style={{ fontSize: 13, color: "#94a3b8" }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>{money(value)}</div>
+    </div>
+  );
+}
+
+function HistogramaChart({ data }: { data: any[] }) {
+  if (!data || data.length === 0) {
+    return <p style={{ color: "#64748b", fontSize: 13 }}>No hay datos suficientes para mostrar la distribución.</p>;
+  }
+  const max = Math.max(...data.map((d) => d.cantidad));
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 160 }}>
+        {data.map((d, i) => (
+          <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }} title={`${money(d.desde)} - ${money(d.hasta)}: ${d.cantidad} órdenes`}>
+            <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>{d.cantidad}</div>
+            <div
+              style={{
+                width: "100%",
+                height: max ? `${Math.max(2, (d.cantidad / max) * 130)}px` : 2,
+                background: "#3b82f6",
+                borderRadius: "3px 3px 0 0",
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#64748b", marginTop: 6 }}>
+        <span>{money(data[0].desde)}</span>
+        <span>{money(data[data.length - 1].hasta)}</span>
+      </div>
     </div>
   );
 }
