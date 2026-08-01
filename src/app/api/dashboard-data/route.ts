@@ -20,6 +20,29 @@ function pct(part: number, total: number) {
   return Math.round((part / total) * 1000) / 10;
 }
 
+// Arma un histograma (distribución en rangos) a partir de una lista de números
+function histograma(valores: number[], bins = 12) {
+  if (valores.length === 0) return [];
+  const min = Math.min(...valores);
+  const max = Math.max(...valores);
+  if (min === max) {
+    return [{ desde: min, hasta: max, cantidad: valores.length }];
+  }
+  const ancho = (max - min) / bins;
+  const conteos = new Array(bins).fill(0);
+  for (const v of valores) {
+    let idx = Math.floor((v - min) / ancho);
+    if (idx >= bins) idx = bins - 1;
+    if (idx < 0) idx = 0;
+    conteos[idx]++;
+  }
+  return conteos.map((cantidad, i) => ({
+    desde: Math.round(min + i * ancho),
+    hasta: Math.round(min + (i + 1) * ancho),
+    cantidad,
+  }));
+}
+
 async function checkAuth(req: NextRequest) {
   const authHeader = req.headers.get("authorization") || "";
   const token = authHeader.replace("Bearer ", "");
@@ -146,9 +169,9 @@ const ordersById = new Map(orders!.map((o) => [o.id, o]));
   // =========================================================
   // 2. TRANSPORTADORAS + CRUCE CON CIUDAD
   // =========================================================
-  const transMap = new Map<
+ const transMap = new Map
     string,
-    { enviados: number; entregado: number; devolucion: number; en_transito: number }
+    { enviados: number; entregado: number; devolucion: number; en_transito: number; fletes: number[] }
   >();
   const transCiudadMap = new Map<
     string,
@@ -160,12 +183,18 @@ const ordersById = new Map(orders!.map((o) => [o.id, o]));
     const b = bucketFor(o.estatus_actual);
     if (b === "cancelado" || b === "otros") continue; // nunca se envió de verdad
 
-    const t = o.transportadora || "SIN TRANSPORTADORA";
+  const t = o.transportadora || "SIN TRANSPORTADORA";
     if (!transMap.has(t)) {
-      transMap.set(t, { enviados: 0, entregado: 0, devolucion: 0, en_transito: 0 });
+      transMap.set(t, { enviados: 0, entregado: 0, devolucion: 0, en_transito: 0, fletes: [] });
     }
     const tm = transMap.get(t)!;
     tm.enviados++;
+    if (b === "entregado") tm.entregado++;
+    else if (b === "devolucion") tm.devolucion++;
+    else tm.en_transito++;
+    if (o.precio_flete !== null && o.precio_flete !== undefined) {
+      tm.fletes.push(o.precio_flete);
+    }
     if (b === "entregado") tm.entregado++;
     else if (b === "devolucion") tm.devolucion++;
     else tm.en_transito++;
@@ -182,7 +211,7 @@ const ordersById = new Map(orders!.map((o) => [o.id, o]));
     else tc.en_transito++;
   }
 
-  const transportadoras = Array.from(transMap.entries())
+const transportadoras = Array.from(transMap.entries())
     .map(([transportadora, t]) => ({
       transportadora,
       enviados: t.enviados,
@@ -192,6 +221,12 @@ const ordersById = new Map(orders!.map((o) => [o.id, o]));
       devueltosPct: pct(t.devolucion, t.enviados),
       enTransito: t.en_transito,
       enTransitoPct: pct(t.en_transito, t.enviados),
+      fleteProm: t.fletes.length
+        ? Math.round(t.fletes.reduce((s, v) => s + v, 0) / t.fletes.length)
+        : null,
+      fleteMin: t.fletes.length ? Math.round(Math.min(...t.fletes)) : null,
+      fleteMax: t.fletes.length ? Math.round(Math.max(...t.fletes)) : null,
+      histogramaFlete: histograma(t.fletes),
     }))
     .sort((a, b) => b.enviados - a.enviados);
 
@@ -199,6 +234,17 @@ const ordersById = new Map(orders!.map((o) => [o.id, o]));
     (a, b) => b.total - a.total
   );
 
+  // Costo de flete de TODA la operación (todas las transportadoras juntas)
+  const todosLosFletes = Array.from(transMap.values()).flatMap((t) => t.fletes);
+  const fleteGlobal = {
+    promedio: todosLosFletes.length
+      ? Math.round(todosLosFletes.reduce((s, v) => s + v, 0) / todosLosFletes.length)
+      : 0,
+    minimo: todosLosFletes.length ? Math.round(Math.min(...todosLosFletes)) : 0,
+    maximo: todosLosFletes.length ? Math.round(Math.max(...todosLosFletes)) : 0,
+    cantidad: todosLosFletes.length,
+    histograma: histograma(todosLosFletes, 15),
+  };
  // =========================================================
   // 3. DINERO
   // =========================================================
@@ -525,6 +571,7 @@ return NextResponse.json({
     porCiudad,
     transportadoras,
     transportadoraCiudad,
+    fleteGlobal,
     dinero,
     productoResumen,
     productoCiudad,
