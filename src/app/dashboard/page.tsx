@@ -492,9 +492,9 @@ function TransportadorasTab({ data }: any) {
     <div>
       <h3 style={h3}>Costo de flete de la operación</h3>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 12 }}>
-        <StatCard label="Flete promedio" value={data.fleteGlobal.promedio} color="#3b82f6" />
-        <StatCard label="Flete mínimo" value={data.fleteGlobal.minimo} color="#22c55e" />
-        <StatCard label="Flete máximo" value={data.fleteGlobal.maximo} color="#f97316" />
+<FleteStatCard label="Flete promedio" value={data.fleteGlobal.promedio} color="#3b82f6" />
+        <FleteStatCard label="Flete mínimo" value={data.fleteGlobal.minimo} color="#22c55e" />
+        <FleteStatCard label="Flete máximo" value={data.fleteGlobal.maximo} color="#f97316" />
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4, flexWrap: "wrap" }}>
@@ -565,7 +565,7 @@ function TransportadorasTab({ data }: any) {
   );
 }
 
-function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
+function FleteStatCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div style={{ background: "#1e293b", borderRadius: 10, padding: 16, borderLeft: `4px solid ${color}` }}>
       <div style={{ fontSize: 13, color: "#94a3b8" }}>{label}</div>
