@@ -68,20 +68,48 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: err.message || "Error trayendo datos" }, { status: 500 });
   }
 
-  const ordersById = new Map(orders!.map((o) => [o.id, o]));
+const ordersById = new Map(orders!.map((o) => [o.id, o]));
+
+  // Estatus que consideramos "cerrados": si una orden ya llegó ahí, cuenta
+  // para siempre, aunque deje de aparecer en reportes futuros.
+  const ESTATUS_TERMINALES = ["ENTREGADO", "CANCELADO", "RECHAZADO", "GUIA_ANULADA"];
+  const esTerminal = (estatus: string) => {
+    const e = (estatus || "").trim().toUpperCase();
+    return ESTATUS_TERMINALES.includes(e) || e.includes("DEVOLUCION");
+  };
+
+  // Fecha del reporte más reciente subido (para detectar "huérfanas": órdenes
+  // no cerradas que dejaron de aparecer en los reportes nuevos, probablemente
+  // porque Dropi las sacó del listado sin ponerles un estatus final)
+  const fechaReporteMax = orders!.reduce((max: string | null, o: any) => {
+    if (!o.fecha_reporte) return max;
+    if (!max || o.fecha_reporte > max) return o.fecha_reporte;
+    return max;
+  }, null as string | null);
+
+  const esHuerfana = (o: any) => {
+    const estatus = (o.estatus_actual || "").trim();
+    return !esTerminal(estatus) && o.fecha_reporte !== fechaReporteMax;
+  };
 
   // =========================================================
   // 1. ESTATUS GENERAL + POR CIUDAD
   // =========================================================
   const total = orders!.length;
+  let huerfanas = 0;
   const estatusCounts = new Map<string, number>();
   const buckets = { entregado: 0, devolucion: 0, cancelado: 0, en_transito: 0, otros: 0 };
-  const ciudadMap = new Map<
+  const ciudadMap = new Map
     string,
     { entregado: number; devolucion: number; cancelado: number; en_transito: number; otros: number; total: number }
   >();
 
   for (const o of orders!) {
+    if (esHuerfana(o)) {
+      huerfanas++;
+      continue; // no la contamos en ningún estatus: no sabemos su estado real
+    }
+
     const estatus = (o.estatus_actual || "SIN ESTATUS").trim();
     estatusCounts.set(estatus, (estatusCounts.get(estatus) || 0) + 1);
 
@@ -97,16 +125,18 @@ export async function GET(req: NextRequest) {
     c.total++;
   }
 
+  const totalActivo = total - huerfanas;
+
   const porEstatus = Array.from(estatusCounts.entries())
-    .map(([estatus, count]) => ({ estatus, count, pct: pct(count, total) }))
+    .map(([estatus, count]) => ({ estatus, count, pct: pct(count, totalActivo) }))
     .sort((a, b) => b.count - a.count);
 
   const bucketsResumen = {
-    entregado: { count: buckets.entregado, pct: pct(buckets.entregado, total) },
-    devolucion: { count: buckets.devolucion, pct: pct(buckets.devolucion, total) },
-    cancelado: { count: buckets.cancelado, pct: pct(buckets.cancelado, total) },
-    en_transito: { count: buckets.en_transito, pct: pct(buckets.en_transito, total) },
-    otros: { count: buckets.otros, pct: pct(buckets.otros, total) },
+    entregado: { count: buckets.entregado, pct: pct(buckets.entregado, totalActivo) },
+    devolucion: { count: buckets.devolucion, pct: pct(buckets.devolucion, totalActivo) },
+    cancelado: { count: buckets.cancelado, pct: pct(buckets.cancelado, totalActivo) },
+    en_transito: { count: buckets.en_transito, pct: pct(buckets.en_transito, totalActivo) },
+    otros: { count: buckets.otros, pct: pct(buckets.otros, totalActivo) },
   };
 
   const porCiudad = Array.from(ciudadMap.entries())
@@ -410,24 +440,15 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  // =========================================================
+// =========================================================
   // 7. SEGUIMIENTO DE ÓRDENES SIN MOVIMIENTO (usa fecha_estatus_desde)
   // =========================================================
   // A diferencia del filtro general de arriba, aquí SÍ incluimos
   // PENDIENTE CONFIRMACION, PENDIENTE y GUIA_GENERADA, porque ahora tenemos
   // la fecha real de cambio de estatus (no dependemos de que la
   // transportadora reporte un evento).
-  const ESTATUS_TERMINALES = ["ENTREGADO", "CANCELADO", "RECHAZADO", "GUIA_ANULADA"];
-  const esTerminal = (estatus: string) => {
-    const e = (estatus || "").trim().toUpperCase();
-    return ESTATUS_TERMINALES.includes(e) || e.includes("DEVOLUCION");
-  };
-
-  const fechaReporteMax = orders.reduce((max: string | null, o: any) => {
-    if (!o.fecha_reporte) return max;
-    if (!max || o.fecha_reporte > max) return o.fecha_reporte;
-    return max;
-  }, null as string | null);
+  // (ESTATUS_TERMINALES, esTerminal y fechaReporteMax ya se calcularon arriba,
+  // en la Sección 1, para detectar huérfanas)
   const HOY = fechaReporteMax ? new Date(fechaReporteMax + "T00:00:00") : new Date();
 
   function diasDesde(fecha: string | null) {
@@ -497,6 +518,8 @@ export async function GET(req: NextRequest) {
 
 return NextResponse.json({
     total,
+    totalActivo,
+    huerfanas,
     porEstatus,
     buckets: bucketsResumen,
     porCiudad,
