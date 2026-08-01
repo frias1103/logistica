@@ -496,10 +496,12 @@ const transportadoras = Array.from(transMap.entries())
     return Math.round((HOY.getTime() - f.getTime()) / (1000 * 60 * 60 * 24));
   }
 
-  const seguimientoGruposMap = new Map<string, any[]>();
+const seguimientoGruposMap = new Map<string, any[]>();
   const totalPorEstatusMap = new Map<string, number>();
 
-  for (const o of orders) {
+  for (const o of orders!) {
+    if (esHuerfana(o)) continue; // no la contamos: no sabemos su estado real
+
     const estatus = (o.estatus_actual || "SIN ESTATUS").trim();
     totalPorEstatusMap.set(estatus, (totalPorEstatusMap.get(estatus) || 0) + 1);
     if (esTerminal(estatus)) continue;
