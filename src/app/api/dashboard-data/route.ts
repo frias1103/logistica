@@ -122,11 +122,10 @@ const ordersById = new Map(orders!.map((o) => [o.id, o]));
   let huerfanas = 0;
   const estatusCounts = new Map<string, number>();
   const buckets = { entregado: 0, devolucion: 0, cancelado: 0, en_transito: 0, otros: 0 };
-  const ciudadMap = new Map
+const ciudadMap = new Map
     string,
     { entregado: number; devolucion: number; cancelado: number; en_transito: number; otros: number; total: number }
   >();
-
   for (const o of orders!) {
     if (esHuerfana(o)) {
       huerfanas++;
