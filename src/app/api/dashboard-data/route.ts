@@ -165,10 +165,7 @@ const ciudadMap = new Map<string, { entregado: number; devolucion: number; cance
   // =========================================================
   // 2. TRANSPORTADORAS + CRUCE CON CIUDAD
   // =========================================================
- const transMap = new Map
-    string,
-    { enviados: number; entregado: number; devolucion: number; en_transito: number; fletes: number[] }
-  >();
+const transMap = new Map<string, { enviados: number; entregado: number; devolucion: number; en_transito: number; fletes: number[] }>();
   const transCiudadMap = new Map<
     string,
     { transportadora: string; ciudad: string; entregado: number; devolucion: number; en_transito: number; cancelado: number; total: number }
