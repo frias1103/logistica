@@ -775,6 +775,16 @@ function ProductoTab({ data }: any) {
 }
 
 function ProductividadTab({ data }: any) {
+  const totalHoy = data.confirmacionesPorVendedorHoy.reduce((s: number, v: any) => s + v.cantidad, 0);
+
+  // Agrupamos por fecha para poder mostrar un total al final de cada día
+  const porDiaGrouped = new Map<string, { vendedor: string; cantidad: number }[]>();
+  for (const v of data.confirmacionesPorVendedorPorDia) {
+    if (!porDiaGrouped.has(v.fecha)) porDiaGrouped.set(v.fecha, []);
+    porDiaGrouped.get(v.fecha)!.push({ vendedor: v.vendedor, cantidad: v.cantidad });
+  }
+  const fechasOrdenadas = Array.from(porDiaGrouped.keys()).sort((a, b) => (a < b ? 1 : -1));
+
   return (
     <div>
       <h3 style={h3}>Confirmadas hoy — {formatFecha(data.fechaReporteMaxProductividad)}</h3>
@@ -783,11 +793,27 @@ function ProductividadTab({ data }: any) {
           Nadie confirmó órdenes nuevas en el último reporte cargado.
         </p>
       ) : (
-        <div style={{ marginBottom: 32 }}>
-          <Table
-            headers={["Vendedor", "Órdenes confirmadas hoy"]}
-            rows={data.confirmacionesPorVendedorHoy.map((v: any) => [v.vendedor, v.cantidad])}
-          />
+        <div style={{ overflowX: "auto", marginBottom: 32, background: "#1e293b", borderRadius: 10 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th style={th}>Vendedor</th>
+                <th style={th}>Órdenes confirmadas hoy</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.confirmacionesPorVendedorHoy.map((v: any) => (
+                <tr key={v.vendedor}>
+                  <td style={td}>{v.vendedor}</td>
+                  <td style={td}>{v.cantidad}</td>
+                </tr>
+              ))}
+              <tr style={{ background: "#334155", fontWeight: 700 }}>
+                <td style={td}>TOTAL</td>
+                <td style={td}>{totalHoy}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -800,14 +826,39 @@ function ProductividadTab({ data }: any) {
       </div>
 
       <h3 style={h3}>Historial día por día</h3>
-      <Table
-        headers={["Fecha", "Vendedor", "Órdenes confirmadas"]}
-        rows={data.confirmacionesPorVendedorPorDia.map((v: any) => [
-          formatFecha(v.fecha),
-          v.vendedor,
-          v.cantidad,
-        ])}
-      />
+      <div style={{ overflowX: "auto", marginBottom: 32, background: "#1e293b", borderRadius: 10 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th style={th}>Fecha</th>
+              <th style={th}>Vendedor</th>
+              <th style={th}>Órdenes confirmadas</th>
+            </tr>
+          </thead>
+          <tbody>
+            {fechasOrdenadas.map((fecha) => {
+              const filas = [...porDiaGrouped.get(fecha)!].sort((a, b) => b.cantidad - a.cantidad);
+              const totalDia = filas.reduce((s, f) => s + f.cantidad, 0);
+              return (
+                <Fragment key={fecha}>
+                  {filas.map((f, i) => (
+                    <tr key={fecha + f.vendedor}>
+                      <td style={td}>{i === 0 ? formatFecha(fecha) : ""}</td>
+                      <td style={td}>{f.vendedor}</td>
+                      <td style={td}>{f.cantidad}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ background: "#334155", fontWeight: 700 }}>
+                    <td style={td}></td>
+                    <td style={td}>TOTAL {formatFecha(fecha)}</td>
+                    <td style={td}>{totalDia}</td>
+                  </tr>
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
