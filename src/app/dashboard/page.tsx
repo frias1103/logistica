@@ -4,6 +4,12 @@ import { useEffect, useState, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 
+async function getFreshToken(): Promise<string> {
+  const supabase = createClient();
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token || "";
+}
+
 type Tab =
   | "seguimiento"
   | "estatus"
@@ -298,9 +304,10 @@ function GrupoSeguimiento({
 async function marcarReportado(id: string, fecha: string | null) {
     onMarcar(id, fecha);
     try {
+      const freshToken = await getFreshToken();
       await fetch("/api/marcar-reportado", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${freshToken}` },
         body: JSON.stringify({ id, fecha }),
       });
     } catch (err) {
@@ -438,13 +445,14 @@ async function marcarReportado(id: string, fecha: string | null) {
   const [editando, setEditando] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
-  async function guardar() {
+async function guardar() {
     setGuardando(true);
     const nuevaNota = valor.trim() || null;
     try {
+      const freshToken = await getFreshToken();
       const res = await fetch("/api/actualizar-nota", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${freshToken}` },
         body: JSON.stringify({ id: orderId, nota: nuevaNota }),
       });
       if (!res.ok) {
