@@ -106,6 +106,17 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
       return { ...prev, seguimiento: { ...prev.seguimiento, grupos: nuevosGrupos } };
     });
   }
+
+  function actualizarNota(id: string, nota: string | null) {
+    setData((prev: any) => {
+      if (!prev) return prev;
+      const nuevosGrupos = prev.seguimiento.grupos.map((g: any) => ({
+        ...g,
+        ordenes: g.ordenes.map((o: any) => (o.id === id ? { ...o, nota } : o)),
+      }));
+      return { ...prev, seguimiento: { ...prev.seguimiento, grupos: nuevosGrupos } };
+    });
+  }
   const tabs: { key: Tab; label: string }[] = [
     { key: "seguimiento", label: "Seguimiento" },
     { key: "estatus", label: "Estatus" },
@@ -148,8 +159,13 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
         ))}
       </div>
 
-     {tab === "seguimiento" && (
-        <SeguimientoTab data={data} token={token} onMarcar={actualizarFechaReportado} />
+{tab === "seguimiento" && (
+        <SeguimientoTab
+          data={data}
+          token={token}
+          onMarcar={actualizarFechaReportado}
+          onNota={actualizarNota}
+        />
       )}
       {tab === "estatus" && <EstatusTab data={data} />}
       {tab === "transportadoras" && <TransportadorasTab data={data} />}
@@ -170,7 +186,7 @@ function diasEntre(fechaDesde: string | null, fechaHasta: string | null) {
   return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function SeguimientoTab({ data, token, onMarcar }: any) {
+function SeguimientoTab({ data, token, onMarcar, onNota }: any) {
   const s = data.seguimiento;
   const [selected, setSelected] = useState<string>("__todos__");
   const [orden, setOrden] = useState<"desc" | "asc">("desc"); // desc = más viejas primero
@@ -216,13 +232,14 @@ function SeguimientoTab({ data, token, onMarcar }: any) {
       </div>
 
       {gruposAMostrar.map((g: any) => (
-        <GrupoSeguimiento
+<GrupoSeguimiento
           key={g.estatus}
           grupo={g}
           orden={orden}
           token={token}
           fechaHoy={s.fechaReporte}
           onMarcar={onMarcar}
+          onNota={onNota}
         />
       ))}
     </div>
@@ -235,12 +252,14 @@ function GrupoSeguimiento({
   token,
   fechaHoy,
   onMarcar,
+  onNota,
 }: {
   grupo: any;
   orden: "asc" | "desc";
   token: string;
   fechaHoy: string;
   onMarcar: (id: string, fecha: string | null) => void;
+  onNota: (id: string, nota: string | null) => void;
 }) {
   const [page, setPage] = useState(0);
   const [copiado, setCopiado] = useState(false);
@@ -349,6 +368,7 @@ async function marcarReportado(id: string, fecha: string | null) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr>
+<tr>
               <th style={th}>Cliente</th>
               <th style={th}>Teléfono</th>
               <th style={th}>Ciudad</th>
@@ -356,6 +376,7 @@ async function marcarReportado(id: string, fecha: string | null) {
               <th style={th}>Sin movimiento desde</th>
               <th style={th}>Días sin mov.</th>
               <th style={th}>Reportado</th>
+              <th style={th}>Nota</th>
             </tr>
           </thead>
           <tbody>
@@ -383,6 +404,7 @@ async function marcarReportado(id: string, fecha: string | null) {
                         </button>
                       </span>
                     ) : (
+) : (
                       <button
                         onClick={() => marcarReportado(o.id, fechaHoy)}
                         style={{ ...secondaryBtn, padding: "2px 8px", fontSize: 11 }}
@@ -391,12 +413,88 @@ async function marcarReportado(id: string, fecha: string | null) {
                       </button>
                     )}
                   </td>
+                  <td style={td}>
+                    <NotaCell orderId={o.id} notaInicial={o.nota} token={token} onGuardado={onNota} />
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+      function NotaCell({
+  orderId,
+  notaInicial,
+  token,
+  onGuardado,
+}: {
+  orderId: string;
+  notaInicial: string | null;
+  token: string;
+  onGuardado: (id: string, nota: string | null) => void;
+}) {
+  const [valor, setValor] = useState(notaInicial || "");
+  const [editando, setEditando] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+
+  async function guardar() {
+    setGuardando(true);
+    const nuevaNota = valor.trim() || null;
+    try {
+      const res = await fetch("/api/actualizar-nota", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ id: orderId, nota: nuevaNota }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        alert(`No se pudo guardar la nota: ${json.error || res.statusText}`);
+        return;
+      }
+      onGuardado(orderId, nuevaNota);
+      setEditando(false);
+    } catch {
+      alert("No se pudo guardar la nota (falló la conexión). Intentá de nuevo.");
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  if (!editando) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 160 }}>
+        <span style={{ color: notaInicial ? "#e2e8f0" : "#64748b", fontSize: 12 }}>
+          {notaInicial || "Sin nota"}
+        </span>
+        <button
+          onClick={() => setEditando(true)}
+          style={{ ...secondaryBtn, padding: "2px 8px", fontSize: 11 }}
+        >
+          {notaInicial ? "Editar" : "Agregar"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 220 }}>
+      <input
+        type="text"
+        value={valor}
+        onChange={(e) => setValor(e.target.value)}
+        placeholder="Ej: ya pagado, retira el viernes..."
+        style={{ ...selectStyle, padding: "4px 8px", fontSize: 12, flex: 1 }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") guardar();
+        }}
+        autoFocus
+      />
+      <button onClick={guardar} disabled={guardando} style={{ ...secondaryBtn, padding: "2px 8px", fontSize: 11 }}>
+        {guardando ? "..." : "Guardar"}
+      </button>
     </div>
   );
 }
