@@ -128,7 +128,7 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
   ];
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: 32 }}>
+    <div style={{ maxWidth: 1600, margin: "0 auto", padding: 32 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <h1 style={{ fontSize: 22 }}>Dashboard de Logística</h1>
         <button onClick={() => router.push("/upload")} style={secondaryBtn}>
