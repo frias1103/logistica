@@ -366,9 +366,8 @@ async function marcarReportado(id: string, fecha: string | null) {
       </div>
       <div style={{ overflowX: "auto", background: "#1e293b", borderRadius: "0 0 10px 10px" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
+<thead>
             <tr>
-<tr>
               <th style={th}>Cliente</th>
               <th style={th}>Teléfono</th>
               <th style={th}>Ciudad</th>
@@ -404,7 +403,6 @@ async function marcarReportado(id: string, fecha: string | null) {
                         </button>
                       </span>
                     ) : (
-) : (
                       <button
                         onClick={() => marcarReportado(o.id, fechaHoy)}
                         style={{ ...secondaryBtn, padding: "2px 8px", fontSize: 11 }}
