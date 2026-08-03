@@ -510,7 +510,7 @@ const seguimientoGruposMap = new Map<string, any[]>();
     if (dias === null || dias <= 2) continue;
 
  if (!seguimientoGruposMap.has(estatus)) seguimientoGruposMap.set(estatus, []);
-    seguimientoGruposMap.get(estatus)!.push({
+seguimientoGruposMap.get(estatus)!.push({
       id: o.id,
       nombre_cliente: o.nombre_cliente,
       telefono: o.telefono,
@@ -519,6 +519,7 @@ const seguimientoGruposMap = new Map<string, any[]>();
       dias,
       fecha_estatus_desde: o.fecha_estatus_desde,
       fecha_reportado: o.fecha_reportado || null,
+      nota: o.nota || null,
     });
   }
 
