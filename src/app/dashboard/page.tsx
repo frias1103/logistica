@@ -67,31 +67,48 @@ export default function DashboardPage() {
   const [tab, setTab] = useState<Tab>("seguimiento");
   const [token, setToken] = useState<string>("");
   
+const [mes, setMes] = useState<string>("__todos__");
+
+  async function cargarDatos(accessToken: string, mesSeleccionado: string) {
+    setLoading(true);
+    try {
+      const url =
+        mesSeleccionado === "__todos__"
+          ? "/api/dashboard-data"
+          : `/api/dashboard-data?mes=${mesSeleccionado}`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error || "Error cargando el dashboard.");
+      } else {
+        setData(json);
+        setError(null);
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: sessionData }) => {
       if (!sessionData.session) {
         router.replace("/login");
         return;
       }
-     setCheckingAuth(false);
+      setCheckingAuth(false);
       setToken(sessionData.session.access_token);
-      try {
-        const res = await fetch("/api/dashboard-data", {
-          headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
-        });
-        const json = await res.json();
-        if (!res.ok) {
-          setError(json.error || "Error cargando el dashboard.");
-        } else {
-          setData(json);
-        }
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
+      await cargarDatos(sessionData.session.access_token, "__todos__");
     });
   }, []);
+
+  function cambiarMes(nuevoMes: string) {
+    setMes(nuevoMes);
+    if (token) cargarDatos(token, nuevoMes);
+  }
 
   if (checkingAuth || loading) {
     return <div style={{ padding: 40 }}>Cargando dashboard...</div>;
@@ -141,7 +158,19 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
           Ir a subir archivos
         </button>
       </div>
-   <p style={{ color: "#94a3b8", marginBottom: 24 }}>
+<div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <span style={{ color: "#94a3b8", fontSize: 13 }}>Ver:</span>
+        <select value={mes} onChange={(e) => cambiarMes(e.target.value)} style={selectStyle}>
+          <option value="__todos__">Todos los meses</option>
+          {data.mesesDisponibles.map((m: string) => (
+            <option key={m} value={m}>
+              {nombreMes(m)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <p style={{ color: "#94a3b8", marginBottom: 24 }}>
         {data.total} órdenes en total en el historial guardado
         {data.huerfanas > 0 && (
           <span>
@@ -182,7 +211,14 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
     </div>
   );
 }
-
+function nombreMes(m: string) {
+  const [anio, mes] = m.split("-");
+  const nombres = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+  ];
+  return `${nombres[parseInt(mes, 10) - 1]} ${anio}`;
+}
 const SEGUIMIENTO_PAGE_SIZE = 50;
 
 function diasEntre(fechaDesde: string | null, fechaHasta: string | null) {
