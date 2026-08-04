@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
 
   const supabase = createAdminClient();
 
-  let orders: any[];
+let orders: any[];
   let products: any[];
   try {
     orders = await fetchAll(supabase, "order_status_history");
@@ -90,8 +90,6 @@ export async function GET(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Error trayendo datos" }, { status: 500 });
   }
-
-const ordersById = new Map(orders!.map((o) => [o.id, o]));
 
   // Estatus que consideramos "cerrados": si una orden ya llegó ahí, cuenta
   // para siempre, aunque deje de aparecer en reportes futuros.
@@ -101,9 +99,9 @@ const ordersById = new Map(orders!.map((o) => [o.id, o]));
     return ESTATUS_TERMINALES.includes(e) || e.includes("DEVOLUCION");
   };
 
-  // Fecha del reporte más reciente subido (para detectar "huérfanas": órdenes
-  // no cerradas que dejaron de aparecer en los reportes nuevos, probablemente
-  // porque Dropi las sacó del listado sin ponerles un estatus final)
+  // Fecha del reporte más reciente subido (para detectar "huérfanas"). Esto
+  // se calcula SIEMPRE sobre todas las órdenes, sin importar el filtro de
+  // mes, porque necesitamos saber cuál es el reporte más nuevo de verdad.
   const fechaReporteMax = orders!.reduce((max: string | null, o: any) => {
     if (!o.fecha_reporte) return max;
     if (!max || o.fecha_reporte > max) return o.fecha_reporte;
@@ -114,6 +112,22 @@ const ordersById = new Map(orders!.map((o) => [o.id, o]));
     const estatus = (o.estatus_actual || "").trim();
     return !esTerminal(estatus) && o.fecha_reporte !== fechaReporteMax;
   };
+
+  // Meses disponibles para el selector (también sobre todas las órdenes,
+  // sin filtrar, para que el desplegable siempre muestre todas las opciones)
+  const mesesDisponibles = Array.from(
+    new Set(orders!.map((o) => (o.fecha_orden || "").slice(0, 7)).filter(Boolean))
+  ).sort((a, b) => (a < b ? 1 : -1));
+
+  // Filtro opcional por mes: ?mes=YYYY-MM (ej. 2026-07). Filtra por la fecha
+  // en que se hizo el pedido (columna FECHA del Excel). Recién a partir de
+  // acá, todas las secciones de abajo trabajan solo con estas órdenes.
+  const mesFiltro = req.nextUrl.searchParams.get("mes");
+  if (mesFiltro) {
+    orders = orders!.filter((o) => (o.fecha_orden || "").startsWith(mesFiltro));
+  }
+
+  const ordersById = new Map(orders!.map((o) => [o.id, o]));
 
   // =========================================================
   // 1. ESTATUS GENERAL + POR CIUDAD
@@ -559,6 +573,8 @@ seguimientoGruposMap.get(estatus)!.push({
   };
 
 return NextResponse.json({
+    mesesDisponibles,
+    mesFiltro: mesFiltro || null,
     total,
     totalActivo,
     huerfanas,
