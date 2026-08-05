@@ -982,7 +982,7 @@ function HistorialEstatusTab({ data }: any) {
         ))}
       </div>
 
-      {seleccionados.length === 0 ? (
+{seleccionados.length === 0 ? (
         <p style={{ color: "#64748b", fontSize: 13 }}>Elegí al menos un estatus para ver la tabla.</p>
       ) : (
         <div style={{ overflowX: "auto", background: "#1e293b", borderRadius: 10 }}>
@@ -1014,13 +1014,30 @@ function HistorialEstatusTab({ data }: any) {
                   </tr>
                 );
               })}
+              <tr style={{ background: "#334155", fontWeight: 700 }}>
+                <td style={td}>TOTAL</td>
+                {seleccionados.map((estatus) => {
+                  const totalEstatus = fechasOrdenadas.reduce(
+                    (s, fecha) => s + (porFecha.get(fecha)!.get(estatus) || 0),
+                    0
+                  );
+                  return (
+                    <td key={estatus} style={td}>
+                      {totalEstatus}
+                    </td>
+                  );
+                })}
+                <td style={td}>
+                  {fechasOrdenadas.reduce(
+                    (s, fecha) => s + seleccionados.reduce((s2, e) => s2 + (porFecha.get(fecha)!.get(e) || 0), 0),
+                    0
+                  )}
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
       )}
-    </div>
-  );
-}
 function ProductividadTab({ data }: any) {
   const totalHoy = data.confirmacionesPorVendedorHoy.reduce((s: number, v: any) => s + v.cantidad, 0);
 
