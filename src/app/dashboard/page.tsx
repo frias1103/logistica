@@ -1032,12 +1032,15 @@ function HistorialEstatusTab({ data }: any) {
                     (s, fecha) => s + seleccionados.reduce((s2, e) => s2 + (porFecha.get(fecha)!.get(e) || 0), 0),
                     0
                   )}
-                </td>
-              </tr>
+</tr>
             </tbody>
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
 function ProductividadTab({ data }: any) {
   const totalHoy = data.confirmacionesPorVendedorHoy.reduce((s: number, v: any) => s + v.cantidad, 0);
 
