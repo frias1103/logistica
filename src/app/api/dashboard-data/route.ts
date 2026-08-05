@@ -565,12 +565,33 @@ seguimientoGruposMap.get(estatus)!.push({
       return maxB - maxA;
     });
 
-  const seguimiento = {
+const seguimiento = {
     fechaReporte: fechaReporteMax,
     totalSinMovimiento: resumenPorEstatus.reduce((s, r) => s + r.sinMovimiento, 0),
     resumenPorEstatus,
     grupos,
   };
+
+  // =========================================================
+  // 9. ESTATUS POR DÍA (cuántas órdenes entraron a cada estatus, día a día)
+  // =========================================================
+  const estatusPorDiaMap = new Map<string, number>();
+  const todosLosEstatusSet = new Set<string>();
+  for (const o of orders!) {
+    if (esHuerfana(o)) continue;
+    const estatus = (o.estatus_actual || "SIN ESTATUS").trim();
+    todosLosEstatusSet.add(estatus);
+    if (!o.fecha_estatus_desde) continue;
+    const key = `${o.fecha_estatus_desde}__${estatus}`;
+    estatusPorDiaMap.set(key, (estatusPorDiaMap.get(key) || 0) + 1);
+  }
+  const estatusPorDia = Array.from(estatusPorDiaMap.entries())
+    .map(([key, cantidad]) => {
+      const [fecha, estatus] = key.split("__");
+      return { fecha, estatus, cantidad };
+    })
+    .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+  const todosLosEstatus = Array.from(todosLosEstatusSet).sort();
 
 return NextResponse.json({
     mesesDisponibles,
@@ -593,7 +614,9 @@ return NextResponse.json({
     confirmacionesPorVendedorHoy,
     confirmacionesPorVendedorPorDia,
     fechaReporteMaxProductividad,
-    tagsResumen,
+tagsResumen,
     seguimiento,
+    estatusPorDia,
+    todosLosEstatus,
   });
 }
