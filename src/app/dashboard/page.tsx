@@ -1028,7 +1028,6 @@ function HistorialEstatusTab({ data }: any) {
                   );
                 })}
                 <td style={td}>
-<td style={td}>
                   {fechasOrdenadas.reduce(
                     (s, fecha) => s + seleccionados.reduce((s2, e) => s2 + (porFecha.get(fecha)!.get(e) || 0), 0),
                     0
