@@ -17,7 +17,8 @@ type Tab =
   | "dinero"
   | "producto"
   | "productividad"
-  | "tags";
+  | "tags"
+  | "historialEstatus";
 
 const money = (n: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n);
@@ -147,6 +148,7 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
     { key: "dinero", label: "Dinero" },
     { key: "producto", label: "Producto" },
     { key: "productividad", label: "Productividad" },
+    { key: "historialEstatus", label: "Historial de Estatus" },
     { key: "tags", label: "Tags" },
   ];
 
@@ -207,6 +209,7 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
       {tab === "dinero" && <DineroTab data={data} />}
       {tab === "producto" && <ProductoTab data={data} />}
       {tab === "productividad" && <ProductividadTab data={data} />}
+      {tab === "historialEstatus" && <HistorialEstatusTab data={data} />}
       {tab === "tags" && <TagsTab data={data} />}
     </div>
   );
@@ -914,6 +917,110 @@ function ProductoTab({ data }: any) {
   );
 }
 
+function HistorialEstatusTab({ data }: any) {
+  const [seleccionados, setSeleccionados] = useState<string[]>(data.todosLosEstatus);
+
+  function toggle(estatus: string) {
+    setSeleccionados((prev) =>
+      prev.includes(estatus) ? prev.filter((e) => e !== estatus) : [...prev, estatus]
+    );
+  }
+
+  function marcarTodos() {
+    setSeleccionados(data.todosLosEstatus);
+  }
+
+  function desmarcarTodos() {
+    setSeleccionados([]);
+  }
+
+  // Agrupamos por fecha, solo con los estatus seleccionados
+  const porFecha = new Map<string, Map<string, number>>();
+  for (const r of data.estatusPorDia) {
+    if (!seleccionados.includes(r.estatus)) continue;
+    if (!porFecha.has(r.fecha)) porFecha.set(r.fecha, new Map());
+    porFecha.get(r.fecha)!.set(r.estatus, r.cantidad);
+  }
+  const fechasOrdenadas = Array.from(porFecha.keys()).sort((a, b) => (a < b ? 1 : -1));
+
+  return (
+    <div>
+      <p style={{ color: "#94a3b8", marginBottom: 16 }}>
+        Muestra, día por día, cuántas órdenes entraron a cada estatus (según la fecha
+        en que cambiaron a su estatus actual). Elegí qué estatus ver.
+      </p>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+        <button onClick={marcarTodos} style={{ ...secondaryBtn, padding: "4px 10px" }}>
+          Marcar todos
+        </button>
+        <button onClick={desmarcarTodos} style={{ ...secondaryBtn, padding: "4px 10px" }}>
+          Desmarcar todos
+        </button>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "8px 16px",
+          background: "#1e293b",
+          borderRadius: 10,
+          padding: 16,
+          marginBottom: 24,
+        }}
+      >
+        {data.todosLosEstatus.map((estatus: string) => (
+          <label key={estatus} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={seleccionados.includes(estatus)}
+              onChange={() => toggle(estatus)}
+            />
+            {estatus}
+          </label>
+        ))}
+      </div>
+
+      {seleccionados.length === 0 ? (
+        <p style={{ color: "#64748b", fontSize: 13 }}>Elegí al menos un estatus para ver la tabla.</p>
+      ) : (
+        <div style={{ overflowX: "auto", background: "#1e293b", borderRadius: 10 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th style={th}>Fecha</th>
+                {seleccionados.map((estatus) => (
+                  <th key={estatus} style={th}>
+                    {estatus}
+                  </th>
+                ))}
+                <th style={th}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fechasOrdenadas.map((fecha) => {
+                const fila = porFecha.get(fecha)!;
+                const totalFila = seleccionados.reduce((s, e) => s + (fila.get(e) || 0), 0);
+                return (
+                  <tr key={fecha}>
+                    <td style={td}>{formatFecha(fecha)}</td>
+                    {seleccionados.map((estatus) => (
+                      <td key={estatus} style={td}>
+                        {fila.get(estatus) || 0}
+                      </td>
+                    ))}
+                    <td style={{ ...td, fontWeight: 700 }}>{totalFila}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 function ProductividadTab({ data }: any) {
   const totalHoy = data.confirmacionesPorVendedorHoy.reduce((s: number, v: any) => s + v.cantidad, 0);
 
