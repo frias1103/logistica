@@ -99,20 +99,36 @@ let orders: any[];
     return ESTATUS_TERMINALES.includes(e) || e.includes("DEVOLUCION");
   };
 
-  // Fecha del reporte más reciente subido (para detectar "huérfanas"). Esto
-  // se calcula SIEMPRE sobre todas las órdenes, sin importar el filtro de
-  // mes, porque necesitamos saber cuál es el reporte más nuevo de verdad.
+// Fecha del reporte más reciente subido, para mostrar en pantalla (ej. el
+  // "Corte al X" de Seguimiento). Esto es solo para mostrar texto, no para
+  // detectar huérfanas — para eso usamos updated_at más abajo, que sí tiene
+  // hora exacta y detecta bien cuando subís el reporte 2+ veces en un día.
   const fechaReporteMax = orders!.reduce((max: string | null, o: any) => {
     if (!o.fecha_reporte) return max;
     if (!max || o.fecha_reporte > max) return o.fecha_reporte;
     return max;
   }, null as string | null);
 
+  // Hora exacta de la carga más reciente de TODAS (no solo del día)
+  const maxUpdatedAt = orders!.reduce((max: string | null, o: any) => {
+    if (!o.updated_at) return max;
+    if (!max || o.updated_at > max) return o.updated_at;
+    return max;
+  }, null as string | null);
+  const maxUpdatedAtMs = maxUpdatedAt ? new Date(maxUpdatedAt).getTime() : 0;
+
+  // Margen de tolerancia: subir ~9-12 mil filas en lotes de 300 tarda unos
+  // minutos, así que toda una misma carga puede tener updated_at con algunos
+  // minutos de diferencia entre la primera y la última fila procesada.
+  const VENTANA_MINUTOS_MISMA_CARGA = 20;
+
   const esHuerfana = (o: any) => {
     const estatus = (o.estatus_actual || "").trim();
-    return !esTerminal(estatus) && o.fecha_reporte !== fechaReporteMax;
+    if (esTerminal(estatus)) return false;
+    if (!o.updated_at) return true;
+    const diffMin = (maxUpdatedAtMs - new Date(o.updated_at).getTime()) / 60000;
+    return diffMin > VENTANA_MINUTOS_MISMA_CARGA;
   };
-
   // Meses disponibles para el selector (también sobre todas las órdenes,
   // sin filtrar, para que el desplegable siempre muestre todas las opciones)
   const mesesDisponibles = Array.from(
