@@ -109,9 +109,24 @@ let orders: any[];
     return max;
   }, null as string | null);
 
-const esHuerfana = (o: any) => {
+// ID de la carga más reciente (todas las filas subidas en la misma sesión,
+  // sin importar cuánto haya tardado, comparten el mismo carga_id)
+  const cargaIdMax = orders!.reduce((max: string | null, o: any) => {
+    if (!o.carga_id) return max;
+    if (!max || o.carga_id > max) return o.carga_id;
+    return max;
+  }, null as string | null);
+
+  const esHuerfana = (o: any) => {
     const estatus = (o.estatus_actual || "").trim();
-    return !esTerminal(estatus) && o.fecha_reporte !== fechaReporteMax;
+    if (esTerminal(estatus)) return false;
+    if (o.carga_id) {
+      // Método nuevo y exacto: ¿esta fila vino en la última sesión de carga?
+      return o.carga_id !== cargaIdMax;
+    }
+    // Filas viejas que todavía no tienen carga_id (de antes de este cambio):
+    // usamos el criterio anterior como respaldo hasta que se vuelvan a subir
+    return o.fecha_reporte !== fechaReporteMax;
   };
   // Meses disponibles para el selector (también sobre todas las órdenes,
   // sin filtrar, para que el desplegable siempre muestre todas las opciones)
