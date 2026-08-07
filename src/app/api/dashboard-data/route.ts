@@ -127,7 +127,7 @@ let orders: any[];
     orders = orders!.filter((o) => (o.fecha_orden || "").startsWith(mesFiltro));
   }
 
-  const ordersById = new Map(orders!.map((o) => [o.id, o]));
+const ordersById = new Map(orders!.filter((o) => !esHuerfana(o)).map((o) => [o.id, o]));
 
   // =========================================================
   // 1. ESTATUS GENERAL + POR CIUDAD
@@ -185,7 +185,8 @@ const transMap = new Map<string, { enviados: number; entregado: number; devoluci
     { transportadora: string; ciudad: string; entregado: number; devolucion: number; en_transito: number; cancelado: number; total: number }
   >();
 
-  for (const o of orders!) {
+for (const o of orders!) {
+    if (esHuerfana(o)) continue;
     if (!o.numero_guia) continue; // solo lo que realmente se despachó
     const b = bucketFor(o.estatus_actual);
     if (b === "cancelado" || b === "otros") continue; // nunca se envió de verdad
@@ -282,7 +283,8 @@ const transportadoras = Array.from(transMap.entries())
     proximo_a_entregar: { suma: 0, cantidad: 0 },
   };
 
-  for (const o of orders!) {
+ for (const o of orders!) {
+    if (esHuerfana(o)) continue;
     const b = bucketFor(o.estatus_actual);
     if (b === "entregado") {
       dinero.entregado.suma += ganancia(o, false);
@@ -398,8 +400,9 @@ const transportadoras = Array.from(transMap.entries())
     })
     .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
 
-  const vendedorMap = new Map<string, number>();
+const vendedorMap = new Map<string, number>();
   for (const o of orders!) {
+    if (esHuerfana(o)) continue;
     const v = o.vendedor && o.vendedor.trim() ? o.vendedor.trim() : "SIN VENDEDOR ASIGNADO";
     vendedorMap.set(v, (vendedorMap.get(v) || 0) + 1);
   }
@@ -446,7 +449,8 @@ const transportadoras = Array.from(transMap.entries())
   const NO_ENVIADO_TAGS = ["CANCELADO", "RECHAZADO", "PENDIENTE CONFIRMACION", "GUIA_ANULADA"];
 
   const tagsResumen = TAGS_A_SEGUIR.map((tagBuscado) => {
-    const ordenesConTag = orders.filter((o) => {
+const ordenesConTag = orders.filter((o) => {
+      if (esHuerfana(o)) return false;
       const t = (o.tags || "").toUpperCase();
       if (!t.includes(tagBuscado.toUpperCase())) return false;
       const estatus = (o.estatus_actual || "").trim().toUpperCase();
