@@ -109,25 +109,9 @@ let orders: any[];
     return max;
   }, null as string | null);
 
-  // Hora exacta de la carga más reciente de TODAS (no solo del día)
-  const maxUpdatedAt = orders!.reduce((max: string | null, o: any) => {
-    if (!o.updated_at) return max;
-    if (!max || o.updated_at > max) return o.updated_at;
-    return max;
-  }, null as string | null);
-  const maxUpdatedAtMs = maxUpdatedAt ? new Date(maxUpdatedAt).getTime() : 0;
-
-  // Margen de tolerancia: subir ~9-12 mil filas en lotes de 300 tarda unos
-  // minutos, así que toda una misma carga puede tener updated_at con algunos
-  // minutos de diferencia entre la primera y la última fila procesada.
-  const VENTANA_MINUTOS_MISMA_CARGA = 20;
-
-  const esHuerfana = (o: any) => {
+const esHuerfana = (o: any) => {
     const estatus = (o.estatus_actual || "").trim();
-    if (esTerminal(estatus)) return false;
-    if (!o.updated_at) return true;
-    const diffMin = (maxUpdatedAtMs - new Date(o.updated_at).getTime()) / 60000;
-    return diffMin > VENTANA_MINUTOS_MISMA_CARGA;
+    return !esTerminal(estatus) && o.fecha_reporte !== fechaReporteMax;
   };
   // Meses disponibles para el selector (también sobre todas las órdenes,
   // sin filtrar, para que el desplegable siempre muestre todas las opciones)
