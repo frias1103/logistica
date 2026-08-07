@@ -19,9 +19,10 @@ function toNumber(value: any): number | null {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+const body = await req.json();
     const generalRows: any[] = body.generalRows || [];
     const productRows: any[] = body.productRows || [];
+    const cargaId: string | null = body.cargaId || null;
 
     if (generalRows.length === 0 && productRows.length === 0) {
       return NextResponse.json(
@@ -113,6 +114,7 @@ export async function POST(req: NextRequest) {
           vendedor: row["VENDEDOR"] || null,
           fecha_vendedor_desde: fechaVendedorDesde,
           fecha_reportado: fechaReportadoFinal,
+          carga_id: cargaId,
           usuario_generacion_guia: row["USUARIO GENERACION DE GUIA"] || null,
           fecha_generacion_guia: toISODate(row["FECHA GENERACION DE GUIA"]),
           ultimo_movimiento: row["ÚLTIMO MOVIMIENTO"] || null,
