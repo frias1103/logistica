@@ -83,11 +83,11 @@ export default function UploadPage() {
     return out;
   }
 
-  async function sendBatch(generalRows: any[], productRows: any[]) {
+async function sendBatch(generalRows: any[], productRows: any[], cargaId: string) {
     const res = await fetch("/api/process-daily", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ generalRows, productRows }),
+      body: JSON.stringify({ generalRows, productRows, cargaId }),
     });
     const json = await res.json();
     if (!res.ok) {
@@ -125,6 +125,11 @@ export default function UploadPage() {
         productosActualizados: 0,
       };
 
+// Un ID único para TODA esta sesión de carga, sin importar cuántos
+      // lotes ni cuánto tarde en subirse — así sabemos con certeza qué filas
+      // pertenecen a esta subida puntual, sin depender de horarios.
+      const cargaId = `carga_${Date.now()}`;
+
       setProgress(`Enviando lote 1 de ${generalBatches.length + productBatches.length}...`);
 
       let batchNumber = 0;
@@ -133,11 +138,21 @@ export default function UploadPage() {
         setProgress(
           `Procesando órdenes: lote ${batchNumber} de ${generalBatches.length}...`
         );
-        const json = await sendBatch(batch, []);
+        const json = await sendBatch(batch, [], cargaId);
         totals.totalProcesado += json.totalProcesado;
         totals.nuevos += json.nuevos;
         totals.cambiaronEstatus += json.cambiaronEstatus;
         totals.sinCambio += json.sinCambio;
+      }
+
+      batchNumber = 0;
+      for (const batch of productBatches) {
+        batchNumber++;
+        setProgress(
+          `Procesando productos: lote ${batchNumber} de ${productBatches.length}...`
+        );
+        const json = await sendBatch([], batch, cargaId);
+        totals.productosActualizados += json.productosActualizados;
       }
 
       batchNumber = 0;
