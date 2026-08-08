@@ -119,19 +119,30 @@ let orders: any[];
     return max;
   }, null as string | null);
 
-const esHuerfana = (o: any) => {
+// carga_id tiene la forma "carga_1786198051862" — el número es la hora
+  // exacta (en milisegundos) en que se generó, puesta por nuestro propio
+  // código al momento de subir. Extraemos el día real de ahí (confiable,
+  // no depende del Excel) para agrupar todas las subidas de un mismo día,
+  // aunque hayan quedado repartidas en varias sesiones por reintentos.
+  const cargaIdADia = (cargaId: string | null): string | null => {
+    if (!cargaId) return null;
+    const ms = Number(cargaId.replace("carga_", ""));
+    if (!ms || isNaN(ms)) return null;
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(new Date(ms));
+  };
+  const diaCargaMax = cargaIdADia(cargaIdMax);
+
+  const esHuerfana = (o: any) => {
     const estatus = (o.estatus_actual || "").trim();
     if (esTerminal(estatus)) return false;
-    if (cargaIdMax) {
-      // Ya existen cargas con carga_id real: cualquier fila que no tenga
-      // EXACTAMENTE el carga_id de la última carga (incluidas las que
-      // tienen NULL, o sea las nunca actualizadas con este mecanismo) es
-      // huérfana. Sin excepciones ni respaldo por fecha.
-      return o.carga_id !== cargaIdMax;
+    if (diaCargaMax) {
+      // Comparamos por DÍA (no por sesión exacta), usando la fecha real
+      // embebida en carga_id -> tolera reintentos/cortes dentro del mismo día
+      const diaDeEstaOrden = cargaIdADia(o.carga_id);
+      if (diaDeEstaOrden) return diaDeEstaOrden !== diaCargaMax;
+      return true; // nunca tuvo carga_id -> es huérfana
     }
-    // Solo si TODAVÍA no hay ninguna carga con carga_id en toda la base
-    // (o sea, recién desplegado y nadie subió nada todavía) usamos el
-    // criterio anterior como respaldo transitorio.
+    // Respaldo transitorio: todavía no hay ningún carga_id en la base
     return o.fecha_reporte !== fechaReporteMax;
   };
   // Meses disponibles para el selector (también sobre todas las órdenes,
