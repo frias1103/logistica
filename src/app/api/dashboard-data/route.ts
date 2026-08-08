@@ -591,8 +591,9 @@ const seguimiento = {
     grupos,
   };
 
-  // =========================================================
-  // 9. ESTATUS POR DÍA (cuántas órdenes entraron a cada estatus, día a día)
+// =========================================================
+  // 9. ESTATUS POR DÍA (en qué estatus están los pedidos, según el día en
+  // que se HIZO el pedido — columna FECHA del Excel, fecha_orden acá)
   // =========================================================
   const estatusPorDiaMap = new Map<string, number>();
   const todosLosEstatusSet = new Set<string>();
@@ -600,8 +601,8 @@ const seguimiento = {
     if (esHuerfana(o)) continue;
     const estatus = (o.estatus_actual || "SIN ESTATUS").trim();
     todosLosEstatusSet.add(estatus);
-    if (!o.fecha_estatus_desde) continue;
-    const key = `${o.fecha_estatus_desde}__${estatus}`;
+    if (!o.fecha_orden) continue;
+    const key = `${o.fecha_orden}__${estatus}`;
     estatusPorDiaMap.set(key, (estatusPorDiaMap.get(key) || 0) + 1);
   }
   const estatusPorDia = Array.from(estatusPorDiaMap.entries())
