@@ -82,16 +82,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
-  const supabase = createAdminClient();
+const supabase = createAdminClient();
+
+  try {
 
 let orders: any[];
   let products: any[];
-  try {
-    orders = await fetchAll(supabase, "order_status_history");
-    products = await fetchAll(supabase, "order_products");
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Error trayendo datos" }, { status: 500 });
-  }
+  orders = await fetchAll(supabase, "order_status_history");
+  products = await fetchAll(supabase, "order_products");
 
   // Estatus que consideramos "cerrados": si una orden ya llegó ahí, cuenta
   // para siempre, aunque deje de aparecer en reportes futuros.
@@ -655,11 +653,18 @@ return NextResponse.json({
     guiasPorUsuarioPorDia,
     confirmacionesPorVendedor,
     confirmacionesPorVendedorHoy,
-    confirmacionesPorVendedorPorDia,
+confirmacionesPorVendedorPorDia,
     fechaReporteMaxProductividad,
 tagsResumen,
     seguimiento,
     estatusPorDia,
     todosLosEstatus,
   });
+  } catch (err: any) {
+    console.error("Error en /api/dashboard-data:", err);
+    return NextResponse.json(
+      { error: err.message || "Error interno calculando el dashboard" },
+      { status: 500 }
+    );
+  }
 }
