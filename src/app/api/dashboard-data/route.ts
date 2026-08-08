@@ -119,15 +119,19 @@ let orders: any[];
     return max;
   }, null as string | null);
 
-  const esHuerfana = (o: any) => {
+const esHuerfana = (o: any) => {
     const estatus = (o.estatus_actual || "").trim();
     if (esTerminal(estatus)) return false;
-    if (o.carga_id) {
-      // Método nuevo y exacto: ¿esta fila vino en la última sesión de carga?
+    if (cargaIdMax) {
+      // Ya existen cargas con carga_id real: cualquier fila que no tenga
+      // EXACTAMENTE el carga_id de la última carga (incluidas las que
+      // tienen NULL, o sea las nunca actualizadas con este mecanismo) es
+      // huérfana. Sin excepciones ni respaldo por fecha.
       return o.carga_id !== cargaIdMax;
     }
-    // Filas viejas que todavía no tienen carga_id (de antes de este cambio):
-    // usamos el criterio anterior como respaldo hasta que se vuelvan a subir
+    // Solo si TODAVÍA no hay ninguna carga con carga_id en toda la base
+    // (o sea, recién desplegado y nadie subió nada todavía) usamos el
+    // criterio anterior como respaldo transitorio.
     return o.fecha_reporte !== fechaReporteMax;
   };
   // Meses disponibles para el selector (también sobre todas las órdenes,
