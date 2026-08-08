@@ -625,6 +625,8 @@ return NextResponse.json({
     total,
     totalActivo,
     huerfanas,
+    debugCargaIdMax: cargaIdMax,
+    debugCantidadConCargaId: orders!.filter((o: any) => !!o.carga_id).length,
     porEstatus,
     buckets: bucketsResumen,
     porCiudad,
