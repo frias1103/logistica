@@ -161,7 +161,7 @@ async function sendBatch(generalRows: any[], productRows: any[], cargaId: string
         setProgress(
           `Procesando productos: lote ${batchNumber} de ${productBatches.length}...`
         );
-        const json = await sendBatch([], batch);
+const json = await sendBatch([], batch, cargaId);
         totals.productosActualizados += json.productosActualizados;
       }
 
