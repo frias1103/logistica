@@ -124,11 +124,14 @@ let orders: any[];
   // código al momento de subir. Extraemos el día real de ahí (confiable,
   // no depende del Excel) para agrupar todas las subidas de un mismo día,
   // aunque hayan quedado repartidas en varias sesiones por reintentos.
-  const cargaIdADia = (cargaId: string | null): string | null => {
+const cargaIdADia = (cargaId: string | null): string | null => {
     if (!cargaId) return null;
     const ms = Number(cargaId.replace("carga_", ""));
     if (!ms || isNaN(ms)) return null;
-    return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(new Date(ms));
+    // Colombia es UTC-5 fijo todo el año (no tiene horario de verano), así
+    // que restamos 5 horas y tomamos la fecha en UTC — sin depender de Intl.
+    const bogota = new Date(ms - 5 * 60 * 60 * 1000);
+    return bogota.toISOString().slice(0, 10);
   };
   const diaCargaMax = cargaIdADia(cargaIdMax);
 
