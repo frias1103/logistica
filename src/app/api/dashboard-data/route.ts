@@ -122,26 +122,29 @@ let orders: any[];
   // código al momento de subir. Extraemos el día real de ahí (confiable,
   // no depende del Excel) para agrupar todas las subidas de un mismo día,
   // aunque hayan quedado repartidas en varias sesiones por reintentos.
-const cargaIdADia = (cargaId: string | null): string | null => {
+// carga_id tiene la forma "carga_1786247266527" — el número es la hora
+  // exacta en milisegundos en que se generó esa sesión de carga.
+  const cargaIdAMs = (cargaId: string | null): number | null => {
     if (!cargaId) return null;
     const ms = Number(cargaId.replace("carga_", ""));
-    if (!ms || isNaN(ms)) return null;
-    // Colombia es UTC-5 fijo todo el año (no tiene horario de verano), así
-    // que restamos 5 horas y tomamos la fecha en UTC — sin depender de Intl.
-    const bogota = new Date(ms - 5 * 60 * 60 * 1000);
-    return bogota.toISOString().slice(0, 10);
+    return isNaN(ms) ? null : ms;
   };
-  const diaCargaMax = cargaIdADia(cargaIdMax);
+  const cargaIdMaxMs = cargaIdAMs(cargaIdMax);
+
+  // Tolerancia: si dos sesiones de carga quedan a menos de 3 horas una de
+  // otra, las tratamos como "la misma subida" (por reintentos o cortes de
+  // red). Si hay más de 3 horas de diferencia, son cargas distintas de
+  // verdad (ej. reporte de la mañana vs. reporte de cierre de la noche), y
+  // solo cuenta como vigente la más reciente.
+  const VENTANA_MS = 3 * 60 * 60 * 1000;
 
   const esHuerfana = (o: any) => {
     const estatus = (o.estatus_actual || "").trim();
     if (esTerminal(estatus)) return false;
-    if (diaCargaMax) {
-      // Comparamos por DÍA (no por sesión exacta), usando la fecha real
-      // embebida en carga_id -> tolera reintentos/cortes dentro del mismo día
-      const diaDeEstaOrden = cargaIdADia(o.carga_id);
-      if (diaDeEstaOrden) return diaDeEstaOrden !== diaCargaMax;
-      return true; // nunca tuvo carga_id -> es huérfana
+    if (cargaIdMaxMs) {
+      const msOrden = cargaIdAMs(o.carga_id);
+      if (msOrden === null) return true; // nunca tuvo carga_id -> huérfana
+      return cargaIdMaxMs - msOrden > VENTANA_MS;
     }
     // Respaldo transitorio: todavía no hay ningún carga_id en la base
     return o.fecha_reporte !== fechaReporteMax;
