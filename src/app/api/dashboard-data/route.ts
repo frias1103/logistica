@@ -67,6 +67,7 @@ async function fetchAll(supabase: any, table: string) {
     const { data, error } = await supabase
       .from(table)
       .select("*")
+      .order("id", { ascending: true }) // orden fijo: evita que se salteen o dupliquen filas al paginar
       .range(from, from + pageSize - 1);
     if (error) throw error;
     all = all.concat(data || []);
@@ -75,7 +76,6 @@ async function fetchAll(supabase: any, table: string) {
   }
   return all;
 }
-
 export async function GET(req: NextRequest) {
   const authorized = await checkAuth(req);
   if (!authorized) {
