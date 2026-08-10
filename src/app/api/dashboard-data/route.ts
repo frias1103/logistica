@@ -59,7 +59,7 @@ async function checkAuth(req: NextRequest) {
 
 // Supabase entrega máximo 1000 filas por consulta por defecto (aunque se pida
 // "todo" con select("*")). Esta función pagina hasta traer la tabla completa.
-async function fetchAll(supabase: any, table: string) {
+async function fetchAll(supabase: any, table: string, orderBy: string) {
   const pageSize = 1000;
   let from = 0;
   let all: any[] = [];
@@ -67,7 +67,7 @@ async function fetchAll(supabase: any, table: string) {
     const { data, error } = await supabase
       .from(table)
       .select("*")
-      .order("id", { ascending: true }) // orden fijo: evita que se salteen o dupliquen filas al paginar
+      .order(orderBy, { ascending: true }) // orden fijo: evita que se salteen o dupliquen filas al paginar
       .range(from, from + pageSize - 1);
     if (error) throw error;
     all = all.concat(data || []);
@@ -88,8 +88,8 @@ const supabase = createAdminClient();
 
 let orders: any[];
   let products: any[];
-  orders = await fetchAll(supabase, "order_status_history");
-  products = await fetchAll(supabase, "order_products");
+orders = await fetchAll(supabase, "order_status_history", "id");
+  products = await fetchAll(supabase, "order_products", "order_id");
 
   // Estatus que consideramos "cerrados": si una orden ya llegó ahí, cuenta
   // para siempre, aunque deje de aparecer en reportes futuros.
