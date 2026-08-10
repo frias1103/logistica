@@ -637,6 +637,7 @@ const seguimiento = {
 return NextResponse.json({
     mesesDisponibles,
     mesFiltro: mesFiltro || null,
+    porEstatus,
     total,
     totalActivo,
     huerfanas,
