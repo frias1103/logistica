@@ -165,6 +165,20 @@ const json = await sendBatch([], batch, cargaId);
         totals.productosActualizados += json.productosActualizados;
       }
 
+// Recién ahora que TODOS los lotes de órdenes terminaron bien,
+      // marcamos esta carga como "la vigente" — así, si algo se corta a
+      // mitad de camino, la carga anterior sigue siendo la válida en vez
+      // de quedar en un estado a medias.
+      try {
+        await fetch("/api/finalizar-carga", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cargaId }),
+        });
+      } catch {
+        // si esto falla, la próxima carga exitosa lo va a corregir igual
+      }
+
       setProgress(null);
       setResult(totals);
 
