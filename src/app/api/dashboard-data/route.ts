@@ -124,29 +124,25 @@ orders = await fetchAll(supabase, "order_status_history", "id");
   // aunque hayan quedado repartidas en varias sesiones por reintentos.
 // carga_id tiene la forma "carga_1786247266527" — el número es la hora
   // exacta en milisegundos en que se generó esa sesión de carga.
-  const cargaIdAMs = (cargaId: string | null): number | null => {
-    if (!cargaId) return null;
-    const ms = Number(cargaId.replace("carga_", ""));
-    return isNaN(ms) ? null : ms;
-  };
-  const cargaIdMaxMs = cargaIdAMs(cargaIdMax);
-
-  // Tolerancia: si dos sesiones de carga quedan a menos de 3 horas una de
-  // otra, las tratamos como "la misma subida" (por reintentos o cortes de
-  // red). Si hay más de 3 horas de diferencia, son cargas distintas de
-  // verdad (ej. reporte de la mañana vs. reporte de cierre de la noche), y
-  // solo cuenta como vigente la más reciente.
-  const VENTANA_MS = 3 * 60 * 60 * 1000;
+// La carga "vigente" ya no se adivina comparando horarios entre filas —
+  // se lee de una tabla aparte que se actualiza SOLO cuando una subida
+  // termina completa (ver /api/finalizar-carga). Es un dato exacto, no una
+  // estimación por ventana de tiempo.
+  const { data: sesionActual } = await supabase
+    .from("upload_sessions")
+    .select("carga_id_actual")
+    .eq("id", 1)
+    .maybeSingle();
+  const cargaActual: string | null = sesionActual?.carga_id_actual || null;
 
   const esHuerfana = (o: any) => {
     const estatus = (o.estatus_actual || "").trim();
     if (esTerminal(estatus)) return false;
-    if (cargaIdMaxMs) {
-      const msOrden = cargaIdAMs(o.carga_id);
-      if (msOrden === null) return true; // nunca tuvo carga_id -> huérfana
-      return cargaIdMaxMs - msOrden > VENTANA_MS;
+    if (cargaActual) {
+      return o.carga_id !== cargaActual;
     }
-    // Respaldo transitorio: todavía no hay ningún carga_id en la base
+    // Respaldo transitorio: todavía no hay ninguna carga marcada como
+    // vigente (recién desplegado esto y nadie subió nada todavía)
     return o.fecha_reporte !== fechaReporteMax;
   };
   // Meses disponibles para el selector (también sobre todas las órdenes,
