@@ -51,13 +51,20 @@ export default function UploadPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const [checkingAuth, setCheckingAuth] = useState(true);
+const [checkingAuth, setCheckingAuth] = useState(true);
   const [generalFile, setGeneralFile] = useState<File | null>(null);
   const [productFile, setProductFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
+
+  // Se genera UNA sola vez al abrir esta página (no en cada clic de
+  // "Procesar"). Así, si subís el reporte en varias partes seguidas sin
+  // salir de esta pantalla, todas comparten el mismo ID. Si cerrás la
+  // pestaña y volvés más tarde (ej. la carga de la tarde), se genera un ID
+  // nuevo — separando mañana de tarde automáticamente.
+  const [cargaId] = useState<string>(() => `carga_${Date.now()}`);
   const [notifInfo, setNotifInfo] = useState<any>(null);
 
   useEffect(() => {
@@ -125,12 +132,7 @@ async function sendBatch(generalRows: any[], productRows: any[], cargaId: string
         productosActualizados: 0,
       };
 
-// Un ID único para TODA esta sesión de carga, sin importar cuántos
-      // lotes ni cuánto tarde en subirse — así sabemos con certeza qué filas
-      // pertenecen a esta subida puntual, sin depender de horarios.
-      const cargaId = `carga_${Date.now()}`;
-
-      setProgress(`Enviando lote 1 de ${generalBatches.length + productBatches.length}...`);
+setProgress(`Enviando lote 1 de ${generalBatches.length + productBatches.length}...`);
 
       let batchNumber = 0;
       for (const batch of generalBatches) {
