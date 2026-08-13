@@ -306,8 +306,9 @@ function GrupoSeguimiento({
   onMarcar: (id: string, fecha: string | null) => void;
   onNota: (id: string, nota: string | null) => void;
 }) {
-  const [page, setPage] = useState(0);
+const [page, setPage] = useState(0);
   const [copiado, setCopiado] = useState(false);
+  const [copiadoTel, setCopiadoTel] = useState(false);
 
   const ordenes = orden === "asc" ? [...grupo.ordenes].reverse() : grupo.ordenes;
   const totalPaginas = Math.max(1, Math.ceil(ordenes.length / SEGUIMIENTO_PAGE_SIZE));
@@ -319,6 +320,17 @@ function GrupoSeguimiento({
 
   const guiasDelGrupo: string[] = grupo.ordenes.map((o: any) => o.numero_guia).filter(Boolean);
 
+  // Agrega +57 (Colombia) a cada teléfono, evitando duplicarlo si ya lo tiene
+  function formatTelefonoCO(tel: string): string {
+    const limpio = String(tel).replace(/\D/g, ""); // solo dígitos
+    if (limpio.startsWith("57") && limpio.length > 10) return `+${limpio}`;
+    return `+57${limpio}`;
+  }
+  const telefonosDelGrupo: string[] = grupo.ordenes
+    .map((o: any) => o.telefono)
+    .filter(Boolean)
+    .map(formatTelefonoCO);
+
   async function copiarGuias() {
     try {
       await navigator.clipboard.writeText(guiasDelGrupo.join("\n"));
@@ -329,13 +341,34 @@ function GrupoSeguimiento({
     }
   }
 
-  function descargarGuias() {
+function descargarGuias() {
     const contenido = guiasDelGrupo.join("\n");
     const blob = new Blob([contenido], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `guias_${grupo.estatus.replace(/\s+/g, "_")}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function copiarTelefonos() {
+    try {
+      await navigator.clipboard.writeText(telefonosDelGrupo.join("\n"));
+      setCopiadoTel(true);
+      setTimeout(() => setCopiadoTel(false), 1500);
+    } catch {
+      alert("No se pudo copiar automáticamente. Probá con el botón de descargar.");
+    }
+  }
+
+  function descargarTelefonos() {
+    const contenido = telefonosDelGrupo.join("\n");
+    const blob = new Blob([contenido], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `telefonos_${grupo.estatus.replace(/\s+/g, "_")}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -375,13 +408,23 @@ async function marcarReportado(id: string, fecha: string | null) {
           {formatFecha(grupo.hasta)}
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400, fontSize: 13 }}>
-          {guiasDelGrupo.length > 0 && (
+{guiasDelGrupo.length > 0 && (
             <>
               <button onClick={copiarGuias} style={{ ...secondaryBtn, padding: "4px 10px" }}>
                 {copiado ? "¡Copiado!" : `Copiar ${guiasDelGrupo.length} guías`}
               </button>
               <button onClick={descargarGuias} style={{ ...secondaryBtn, padding: "4px 10px" }}>
-                Descargar .txt
+                Descargar guías .txt
+              </button>
+            </>
+          )}
+          {telefonosDelGrupo.length > 0 && (
+            <>
+              <button onClick={copiarTelefonos} style={{ ...secondaryBtn, padding: "4px 10px" }}>
+                {copiadoTel ? "¡Copiado!" : `Copiar ${telefonosDelGrupo.length} teléfonos`}
+              </button>
+              <button onClick={descargarTelefonos} style={{ ...secondaryBtn, padding: "4px 10px" }}>
+                Descargar teléfonos .txt
               </button>
             </>
           )}
