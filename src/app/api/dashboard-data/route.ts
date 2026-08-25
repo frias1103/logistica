@@ -235,9 +235,6 @@ for (const o of orders!) {
     if (o.precio_flete !== null && o.precio_flete !== undefined) {
       tm.fletes.push(o.precio_flete);
     }
-    if (b === "entregado") tm.entregado++;
-    else if (b === "devolucion") tm.devolucion++;
-    else tm.en_transito++;
 
     const ciudad = o.ciudad_destino || "SIN CIUDAD";
     const key = `${t}__${ciudad}`;
