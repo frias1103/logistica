@@ -168,7 +168,7 @@ orders = await fetchAll(supabase, "order_status_history", "id");
   {
     const porTelefono = new Map<string, any[]>();
     for (const o of orders!) {
-      if (esHuerfana(o) || esDuplicado(o)) continue; // no mezclamos con huérfanas
+      if (esHuerfana(o)) continue; // no mezclamos con huérfanas
       const tel = (o.telefono || "").trim();
       if (!tel) continue;
       if (!porTelefono.has(tel)) porTelefono.set(tel, []);
