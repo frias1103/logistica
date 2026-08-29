@@ -159,7 +159,47 @@ orders = await fetchAll(supabase, "order_status_history", "id");
     orders = orders!.filter((o) => (o.fecha_orden || "").startsWith(mesFiltro));
   }
 
-const ordersById = new Map(orders!.filter((o) => !esHuerfana(o)).map((o) => [o.id, o]));
+  // Deduplicación por teléfono: si un mismo teléfono tiene varios pedidos
+  // CANCELADO, son duplicados (reintentos del mismo pedido real) — se deja
+  // solo el más nuevo. Si además tiene algún pedido en OTRO estatus, los
+  // cancelados de ese teléfono se descartan del todo (el pedido real es el
+  // que sigue vivo en otro estatus).
+  const excluidoPorDuplicado = new Set<string>();
+  {
+    const porTelefono = new Map<string, any[]>();
+    for (const o of orders!) {
+      if (esHuerfana(o) || esDuplicado(o)) continue; // no mezclamos con huérfanas
+      const tel = (o.telefono || "").trim();
+      if (!tel) continue;
+      if (!porTelefono.has(tel)) porTelefono.set(tel, []);
+      porTelefono.get(tel)!.push(o);
+    }
+    for (const grupo of porTelefono.values()) {
+      if (grupo.length < 2) continue;
+      const cancelados = grupo.filter(
+        (o) => (o.estatus_actual || "").trim().toUpperCase() === "CANCELADO"
+      );
+      const noCancelados = grupo.filter(
+        (o) => (o.estatus_actual || "").trim().toUpperCase() !== "CANCELADO"
+      );
+      if (cancelados.length < 2 && noCancelados.length === 0) continue;
+      if (noCancelados.length === 0) {
+        // Todos cancelados -> se queda solo el más nuevo
+        const ordenados = [...cancelados].sort((a, b) =>
+          (b.fecha_orden || "").localeCompare(a.fecha_orden || "")
+        );
+        for (const o of ordenados.slice(1)) excluidoPorDuplicado.add(o.id);
+      } else if (cancelados.length > 0) {
+        // Hay pedidos en otro estatus -> se descartan todos los cancelados
+        for (const o of cancelados) excluidoPorDuplicado.add(o.id);
+      }
+    }
+  }
+  const esDuplicado = (o: any) => excluidoPorDuplicado.has(o.id);
+
+const ordersById = new Map(
+  orders!.filter((o) => !esHuerfana(o) && !esDuplicado(o)).map((o) => [o.id, o])
+);
 
   // =========================================================
   // 1. ESTATUS GENERAL + POR CIUDAD
@@ -170,7 +210,7 @@ const ordersById = new Map(orders!.filter((o) => !esHuerfana(o)).map((o) => [o.i
   const buckets = { entregado: 0, devolucion: 0, cancelado: 0, en_transito: 0, otros: 0 };
 const ciudadMap = new Map<string, { entregado: number; devolucion: number; cancelado: number; en_transito: number; otros: number; total: number }>();
   for (const o of orders!) {
-    if (esHuerfana(o)) {
+    if (esHuerfana(o) || esDuplicado(o)) {
       huerfanas++;
       continue; // no la contamos en ningún estatus: no sabemos su estado real
     }
@@ -218,7 +258,7 @@ const transMap = new Map<string, { enviados: number; entregado: number; devoluci
   >();
 
 for (const o of orders!) {
-    if (esHuerfana(o)) continue;
+    if (esHuerfana(o) || esDuplicado(o)) continue;
     if (!o.numero_guia) continue; // solo lo que realmente se despachó
     const b = bucketFor(o.estatus_actual);
     if (b === "cancelado" || b === "otros") continue; // nunca se envió de verdad
@@ -313,7 +353,7 @@ const transportadoras = Array.from(transMap.entries())
   };
 
  for (const o of orders!) {
-    if (esHuerfana(o)) continue;
+    if (esHuerfana(o) || esDuplicado(o)) continue;
     const b = bucketFor(o.estatus_actual);
     if (b === "entregado") {
       dinero.entregado.suma += ganancia(o, false);
@@ -431,7 +471,7 @@ const transportadoras = Array.from(transMap.entries())
 
 const vendedorMap = new Map<string, number>();
   for (const o of orders!) {
-    if (esHuerfana(o)) continue;
+    if (esHuerfana(o) || esDuplicado(o)) continue;
     const v = o.vendedor && o.vendedor.trim() ? o.vendedor.trim() : "SIN VENDEDOR ASIGNADO";
     vendedorMap.set(v, (vendedorMap.get(v) || 0) + 1);
   }
@@ -479,7 +519,7 @@ const vendedorMap = new Map<string, number>();
 
   const tagsResumen = TAGS_A_SEGUIR.map((tagBuscado) => {
 const ordenesConTag = orders.filter((o) => {
-      if (esHuerfana(o)) return false;
+       if (esHuerfana(o) || esDuplicado(o)) return false;
       const t = (o.tags || "").toUpperCase();
       if (!t.includes(tagBuscado.toUpperCase())) return false;
       const estatus = (o.estatus_actual || "").trim().toUpperCase();
@@ -547,7 +587,7 @@ const seguimientoGruposMap = new Map<string, any[]>();
   const totalPorEstatusMap = new Map<string, number>();
 
   for (const o of orders!) {
-    if (esHuerfana(o)) continue; // no la contamos: no sabemos su estado real
+     if (esHuerfana(o) || esDuplicado(o)) continue; // no la contamos: no sabemos su estado real 
 
     const estatus = (o.estatus_actual || "SIN ESTATUS").trim();
     totalPorEstatusMap.set(estatus, (totalPorEstatusMap.get(estatus) || 0) + 1);
@@ -612,7 +652,7 @@ const seguimiento = {
   const estatusPorDiaMap = new Map<string, number>();
   const todosLosEstatusSet = new Set<string>();
   for (const o of orders!) {
-    if (esHuerfana(o)) continue;
+    if (esHuerfana(o) || esDuplicado(o)) continue;
     const estatus = (o.estatus_actual || "SIN ESTATUS").trim();
     todosLosEstatusSet.add(estatus);
     if (!o.fecha_orden) continue;
