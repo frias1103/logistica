@@ -1820,13 +1820,78 @@ function GeneralTab({ data }: any) {
       />
 
       <h3 style={h3}>Novedades nuevas por día</h3>
-      <div style={{ marginBottom: 32 }}>
-        <Table
-          headers={["Fecha", "Novedades nuevas"]}
-          rows={(data.novedadesPorDia || []).slice(0, 40).map((d: any) => [formatFecha(d.fecha), d.cantidad])}
-        />
+      <NovedadesPorDia dias={data.novedadesPorDia || []} />
+function NovedadesPorDia({ dias }: any) {
+  const [desde, setDesde] = useState<string>("");
+  const [hasta, setHasta] = useState<string>("");
+
+  if (!dias || dias.length === 0) {
+    return <p style={{ color: "#64748b", fontSize: 13, marginBottom: 32 }}>Sin novedades registradas.</p>;
+  }
+
+  const hayFiltro = desde || hasta;
+  // Sin filtro: solo los últimos 20 días. Con filtro: lo que entre en el rango.
+  const filtrados = hayFiltro
+    ? dias.filter((d: any) => {
+        if (desde && d.fecha < desde) return false;
+        if (hasta && d.fecha > hasta) return false;
+        return true;
+      })
+    : dias.slice(0, 20);
+
+  const total = filtrados.reduce((s: number, d: any) => s + d.cantidad, 0);
+
+  return (
+    <div style={{ marginBottom: 32 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+        <span style={{ color: "#94a3b8", fontSize: 13 }}>Desde:</span>
+        <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} style={selectStyle} />
+        <span style={{ color: "#94a3b8", fontSize: 13 }}>Hasta:</span>
+        <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} style={selectStyle} />
+        {hayFiltro && (
+          <button
+            onClick={() => {
+              setDesde("");
+              setHasta("");
+            }}
+            style={{ ...secondaryBtn, padding: "4px 10px" }}
+          >
+            Ver últimos 20 días
+          </button>
+        )}
+        {!hayFiltro && (
+          <span style={{ color: "#64748b", fontSize: 12 }}>
+            Mostrando los últimos 20 días — elegí un rango para ver más.
+          </span>
+        )}
       </div>
 
+      <div style={{ overflowX: "auto", background: "#1e293b", borderRadius: 10 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th style={th}>Fecha</th>
+              <th style={th}>Novedades nuevas</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtrados.map((d: any) => (
+              <tr key={d.fecha}>
+                <td style={td}>{formatFecha(d.fecha)}</td>
+                <td style={td}>{d.cantidad}</td>
+              </tr>
+            ))}
+            <tr style={{ background: "#334155", fontWeight: 700 }}>
+              <td style={td}>TOTAL ({filtrados.length} días)</td>
+              <td style={td}>{total}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+      
       <h3 style={h3}>Por departamento</h3>
       <div style={{ marginBottom: 32 }}>
         <Table
