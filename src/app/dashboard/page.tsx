@@ -2189,8 +2189,7 @@ function MapaColombia({ porDepartamento, novedadesPorDepartamento }: any) {
         </select>
       </div>
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-      <svg viewBox={`0 0 ${W} ${H}`}
-         style={{ width: 560, maxWidth: "100%", height: "auto" }}>
+         <svg viewBox={`0 0 ${W} ${H}`} style={{ width: 900, maxWidth: "100%", height: "auto" }}>
         {geo.features.map((f: any, i: number) => {
           const nombre = nombreDeFeature(f);
           const base = datosPorDepto.get(normDepto(nombre));
@@ -2210,8 +2209,13 @@ function MapaColombia({ porDepartamento, novedadesPorDepartamento }: any) {
             />
           );
         })}
-        {geo.features.map((f: any, i: number) => {
+         {geo.features.map((f: any, i: number) => {
           const nombre = nombreDeFeature(f);
+          // Bogotá D.C. viene como departamento aparte en el mapa, pero para
+          // Dropi está dentro de Cundinamarca -> se pinta, pero no lleva su
+          // propia etiqueta (evita ver "CUNDINAMARCA" dos veces)
+          const nUp = (nombre || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          if (nUp.includes("BOGOTA")) return null;
           const info = esNov ? novPorDepto.get(normDepto(nombre)) : datosPorDepto.get(normDepto(nombre));
           if (!info) return null;
           const c = centroide(f, proj);
@@ -2222,7 +2226,7 @@ function MapaColombia({ porDepartamento, novedadesPorDepartamento }: any) {
                 x={c[0]}
                 y={c[1]}
                 textAnchor="middle"
-                style={{ fontSize: 9, fill: "#e2e8f0", fontWeight: 600, paintOrder: "stroke" }}
+                             style={{ fontSize: 13, fill: "#e2e8f0", fontWeight: 600, paintOrder: "stroke" }}
                 stroke="#0f172a"
                 strokeWidth="2.5"
               >
@@ -2230,9 +2234,9 @@ function MapaColombia({ porDepartamento, novedadesPorDepartamento }: any) {
               </text>
               <text
                 x={c[0]}
-                y={c[1] + 10}
+                           y={c[1] + 14}
                 textAnchor="middle"
-                style={{ fontSize: 9, fill: "#93c5fd", fontWeight: 700, paintOrder: "stroke" }}
+                style={{ fontSize: 13, fill: "#93c5fd", fontWeight: 700, paintOrder: "stroke" }}
                 stroke="#0f172a"
                 strokeWidth="2.5"
               >
