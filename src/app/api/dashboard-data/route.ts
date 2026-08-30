@@ -719,6 +719,83 @@ const seguimiento = {
       };
     })
     .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+      // =========================================================
+  // 11. NOVEDADES / NOTICIAS
+  // =========================================================
+  // Comparamos los últimos 20 días contra los 20 anteriores para detectar
+  // ciudades que mejoraron o empeoraron en devolución y cancelación.
+  const hoyMs = fechaReporteMax ? new Date(fechaReporteMax + "T00:00:00").getTime() : Date.now();
+  const diaMs = 24 * 60 * 60 * 1000;
+  const corte20 = new Date(hoyMs - 20 * diaMs).toISOString().slice(0, 10);
+  const corte40 = new Date(hoyMs - 40 * diaMs).toISOString().slice(0, 10);
+
+  const ciudadPeriodo = new Map<string, any>();
+  for (const o of orders!) {
+    if (esHuerfana(o) || esDuplicado(o)) continue;
+    if (!o.fecha_orden || o.fecha_orden < corte40) continue;
+    const ciudad = (o.ciudad_destino || "SIN CIUDAD").trim();
+    const reciente = o.fecha_orden >= corte20;
+    if (!ciudadPeriodo.has(ciudad)) {
+      ciudadPeriodo.set(ciudad, {
+        recTotal: 0, recDev: 0, recCan: 0,
+        antTotal: 0, antDev: 0, antCan: 0,
+      });
+    }
+    const c = ciudadPeriodo.get(ciudad)!;
+    const b = bucketFor(o.estatus_actual);
+    if (reciente) {
+      c.recTotal++;
+      if (b === "devolucion") c.recDev++;
+      if (b === "cancelado") c.recCan++;
+    } else {
+      c.antTotal++;
+      if (b === "devolucion") c.antDev++;
+      if (b === "cancelado") c.antCan++;
+    }
+  }
+
+  const noticias: any[] = [];
+  for (const [ciudad, c] of ciudadPeriodo.entries()) {
+    // Solo ciudades con volumen suficiente en ambos períodos, para no
+    // sacar conclusiones de 2 o 3 pedidos sueltos
+    if (c.recTotal < 15 || c.antTotal < 15) continue;
+
+    const devRec = pct(c.recDev, c.recTotal);
+    const devAnt = pct(c.antDev, c.antTotal);
+    const canRec = pct(c.recCan, c.recTotal);
+    const canAnt = pct(c.antCan, c.antTotal);
+
+    const diffDev = Math.round((devRec - devAnt) * 10) / 10;
+    const diffCan = Math.round((canRec - canAnt) * 10) / 10;
+
+    if (Math.abs(diffDev) >= 5) {
+      noticias.push({
+        tipo: diffDev > 0 ? "malo" : "bueno",
+        categoria: "Devolución",
+        ciudad,
+        texto: `${ciudad}: la devolución ${diffDev > 0 ? "subió" : "bajó"} de ${devAnt}% a ${devRec}%`,
+        diff: diffDev,
+        volumen: c.recTotal,
+      });
+    }
+    if (Math.abs(diffCan) >= 5) {
+      noticias.push({
+        tipo: diffCan > 0 ? "malo" : "bueno",
+        categoria: "Cancelación",
+        ciudad,
+        texto: `${ciudad}: la cancelación ${diffCan > 0 ? "subió" : "bajó"} de ${canAnt}% a ${canRec}%`,
+        diff: diffCan,
+        volumen: c.recTotal,
+      });
+    }
+  }
+  noticias.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+  // Días que ya quedaron cerrados (los más recientes primero)
+  const diasCerrados = diasPendientes
+    .filter((d: any) => d.cerrado)
+    .slice(0, 10)
+    .map((d: any) => ({ fecha: d.fecha, totalDia: d.totalDia }));
 return NextResponse.json({
     mesesDisponibles,
     mesFiltro: mesFiltro || null,
@@ -749,7 +826,9 @@ tagsResumen,
     seguimiento,
        estatusPorDia,
     todosLosEstatus,
-    diasPendientes,
+      diasPendientes,
+    noticias,
+    diasCerrados,
   });
   } catch (err: any) {
     console.error("Error en /api/dashboard-data:", err);
