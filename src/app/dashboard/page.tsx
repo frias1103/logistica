@@ -2181,6 +2181,7 @@ function MapaColombia({ porDepartamento, novedadesPorDepartamento }: any) {
   const [errorGeo, setErrorGeo] = useState<string | null>(null);
   const [hover, setHover] = useState<any>(null);
   const [modo, setModo] = useState<"envios" | "novedades">("envios");
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   useEffect(() => {
     fetch("/colombia.geo.json")
@@ -2262,16 +2263,30 @@ function MapaColombia({ porDepartamento, novedadesPorDepartamento }: any) {
           const nov = novPorDepto.get(normDepto(nombre));
           const info = esNov ? nov : base;
           const intensidad = info ? 0.15 + (info.total / maxTotal) * 0.75 : 0;
+          const activo = hoverIdx === i;
+          const c = centroide(f, proj);
           return (
             <path
               key={i}
               d={featureToPath(f)}
-              fill={info ? `rgba(${colorBase}, ${intensidad})` : "#0f172a"}
-              stroke="#475569"
-              strokeWidth="0.5"
-              style={{ cursor: info ? "pointer" : "default" }}
-              onMouseEnter={() => info && setHover({ base, nov })}
-              onMouseLeave={() => setHover(null)}
+              fill={info ? `rgba(${colorBase}, ${activo ? Math.min(1, intensidad + 0.25) : intensidad})` : "#0f172a"}
+              stroke={activo ? "#e2e8f0" : "#475569"}
+              strokeWidth={activo ? 1.5 : 0.5}
+              style={{
+                cursor: info ? "pointer" : "default",
+                transition: "transform 0.18s ease, filter 0.18s ease",
+                transformOrigin: c ? `${c[0]}px ${c[1]}px` : "center",
+                transform: activo ? "scale(1.06) translateY(-4px)" : "none",
+                filter: activo ? "drop-shadow(0 6px 10px rgba(0,0,0,0.6))" : "none",
+              }}
+              onMouseEnter={() => {
+                setHoverIdx(i);
+                if (info) setHover({ base, nov });
+              }}
+              onMouseLeave={() => {
+                setHoverIdx(null);
+                setHover(null);
+              }}
             />
           );
         })}
@@ -2292,7 +2307,7 @@ function MapaColombia({ porDepartamento, novedadesPorDepartamento }: any) {
                 x={c[0]}
                 y={c[1]}
                 textAnchor="middle"
-                             style={{ fontSize: 13, fill: "#e2e8f0", fontWeight: 600, paintOrder: "stroke" }}
+                style={{ fontSize: 9, fill: "#e2e8f0", fontWeight: 600, paintOrder: "stroke" }}
                 stroke="#0f172a"
                 strokeWidth="2.5"
               >
@@ -2300,9 +2315,9 @@ function MapaColombia({ porDepartamento, novedadesPorDepartamento }: any) {
               </text>
               <text
                 x={c[0]}
-                           y={c[1] + 14}
+                                   y={c[1] + 10}
                 textAnchor="middle"
-                style={{ fontSize: 13, fill: "#93c5fd", fontWeight: 700, paintOrder: "stroke" }}
+                style={{ fontSize: 9, fill: "#93c5fd", fontWeight: 700, paintOrder: "stroke" }}
                 stroke="#0f172a"
                 strokeWidth="2.5"
               >
