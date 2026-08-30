@@ -719,30 +719,43 @@ const seguimiento = {
       };
     })
     .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
-      // =========================================================
+  // =========================================================
   // 11. NOVEDADES / NOTICIAS
   // =========================================================
-  // Comparamos los últimos 20 días contra los 20 anteriores para detectar
-  // ciudades que mejoraron o empeoraron en devolución y cancelación.
   const hoyMs = fechaReporteMax ? new Date(fechaReporteMax + "T00:00:00").getTime() : Date.now();
   const diaMs = 24 * 60 * 60 * 1000;
   const corte20 = new Date(hoyMs - 20 * diaMs).toISOString().slice(0, 10);
   const corte40 = new Date(hoyMs - 40 * diaMs).toISOString().slice(0, 10);
 
+  // Ignoramos los primeros 20 días de datos: al arrancar la operación (o al
+  // arrancar a cargar reportes) esos días están incompletos y ensucian las
+  // comparaciones.
+  const primeraFechaOrden = orders!.reduce((min: string | null, o: any) => {
+    if (!o.fecha_orden) return min;
+    if (!min || o.fecha_orden < min) return o.fecha_orden;
+    return min;
+  }, null as string | null);
+  const inicioValido = primeraFechaOrden
+    ? new Date(new Date(primeraFechaOrden + "T00:00:00").getTime() + 20 * diaMs).toISOString().slice(0, 10)
+    : null;
+
   const ciudadPeriodo = new Map<string, any>();
+  const ciudadTransp = new Map<string, Map<string, any>>();
+
   for (const o of orders!) {
     if (esHuerfana(o) || esDuplicado(o)) continue;
-    if (!o.fecha_orden || o.fecha_orden < corte40) continue;
+    if (!o.fecha_orden) continue;
+    if (inicioValido && o.fecha_orden < inicioValido) continue; // warm-up
+    if (o.fecha_orden < corte40) continue;
+
     const ciudad = (o.ciudad_destino || "SIN CIUDAD").trim();
     const reciente = o.fecha_orden >= corte20;
+    const b = bucketFor(o.estatus_actual);
+
     if (!ciudadPeriodo.has(ciudad)) {
-      ciudadPeriodo.set(ciudad, {
-        recTotal: 0, recDev: 0, recCan: 0,
-        antTotal: 0, antDev: 0, antCan: 0,
-      });
+      ciudadPeriodo.set(ciudad, { recTotal: 0, recDev: 0, recCan: 0, antTotal: 0, antDev: 0, antCan: 0 });
     }
     const c = ciudadPeriodo.get(ciudad)!;
-    const b = bucketFor(o.estatus_actual);
     if (reciente) {
       c.recTotal++;
       if (b === "devolucion") c.recDev++;
@@ -752,50 +765,104 @@ const seguimiento = {
       if (b === "devolucion") c.antDev++;
       if (b === "cancelado") c.antCan++;
     }
+
+    // Comparativa de transportadoras por ciudad (solo período reciente)
+    if (reciente && o.transportadora) {
+      const t = String(o.transportadora).trim();
+      if (!ciudadTransp.has(ciudad)) ciudadTransp.set(ciudad, new Map());
+      const mapaT = ciudadTransp.get(ciudad)!;
+      if (!mapaT.has(t)) mapaT.set(t, { total: 0, dev: 0, can: 0 });
+      const tt = mapaT.get(t)!;
+      tt.total++;
+      if (b === "devolucion") tt.dev++;
+      if (b === "cancelado") tt.can++;
+    }
   }
 
   const noticias: any[] = [];
+  const fechaNoticia = fechaReporteMax || new Date().toISOString().slice(0, 10);
+
   for (const [ciudad, c] of ciudadPeriodo.entries()) {
-    // Solo ciudades con volumen suficiente en ambos períodos, para no
-    // sacar conclusiones de 2 o 3 pedidos sueltos
     if (c.recTotal < 15 || c.antTotal < 15) continue;
 
     const devRec = pct(c.recDev, c.recTotal);
     const devAnt = pct(c.antDev, c.antTotal);
     const canRec = pct(c.recCan, c.recTotal);
     const canAnt = pct(c.antCan, c.antTotal);
-
     const diffDev = Math.round((devRec - devAnt) * 10) / 10;
     const diffCan = Math.round((canRec - canAnt) * 10) / 10;
 
     if (Math.abs(diffDev) >= 5) {
       noticias.push({
+        fecha: fechaNoticia,
         tipo: diffDev > 0 ? "malo" : "bueno",
         categoria: "Devolución",
-        ciudad,
         texto: `${ciudad}: la devolución ${diffDev > 0 ? "subió" : "bajó"} de ${devAnt}% a ${devRec}%`,
-        diff: diffDev,
-        volumen: c.recTotal,
+        detalle: `${c.recTotal} pedidos en los últimos 20 días`,
+        peso: Math.abs(diffDev),
       });
     }
     if (Math.abs(diffCan) >= 5) {
       noticias.push({
+        fecha: fechaNoticia,
         tipo: diffCan > 0 ? "malo" : "bueno",
         categoria: "Cancelación",
-        ciudad,
         texto: `${ciudad}: la cancelación ${diffCan > 0 ? "subió" : "bajó"} de ${canAnt}% a ${canRec}%`,
-        diff: diffCan,
-        volumen: c.recTotal,
+        detalle: `${c.recTotal} pedidos en los últimos 20 días`,
+        peso: Math.abs(diffCan),
       });
     }
   }
-  noticias.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
 
-  // Días que ya quedaron cerrados (los más recientes primero)
-  const diasCerrados = diasPendientes
-    .filter((d: any) => d.cerrado)
-    .slice(0, 10)
-    .map((d: any) => ({ fecha: d.fecha, totalDia: d.totalDia }));
+  // Comparativa entre transportadoras dentro de una misma ciudad
+  for (const [ciudad, mapaT] of ciudadTransp.entries()) {
+    const candidatas = Array.from(mapaT.entries())
+      .filter(([, v]) => v.total >= 10)
+      .map(([nombre, v]) => ({
+        nombre,
+        total: v.total,
+        malo: pct(v.dev + v.can, v.total),
+        dev: pct(v.dev, v.total),
+        can: pct(v.can, v.total),
+      }))
+      .sort((a, b) => a.malo - b.malo);
+
+    if (candidatas.length < 2) continue;
+    const mejor = candidatas[0];
+    const peor = candidatas[candidatas.length - 1];
+    const brecha = Math.round((peor.malo - mejor.malo) * 10) / 10;
+    if (brecha < 10) continue;
+
+    noticias.push({
+      fecha: fechaNoticia,
+      tipo: "bueno",
+      categoria: "Transportadora",
+      texto: `${ciudad}: ${mejor.nombre} rinde mejor que ${peor.nombre} (${mejor.malo}% vs ${peor.malo}% entre devolución y cancelación)`,
+      detalle: `${mejor.nombre}: ${mejor.total} envíos · ${peor.nombre}: ${peor.total} envíos`,
+      peso: brecha,
+    });
+  }
+
+  // Días cerrados, también como noticias (con su propia fecha)
+  for (const d of diasPendientes) {
+    if (!d.cerrado) continue;
+    noticias.push({
+      fecha: d.fecha,
+      tipo: "bueno",
+      categoria: "Día cerrado",
+      texto: `Se cerró el día ${d.fecha.split("-").reverse().join("/")} — ${d.totalDia} pedidos completados`,
+      detalle: "",
+      peso: 0,
+    });
+  }
+
+  // Máximo 20 noticias: las más nuevas primero, y a igual fecha, las de
+  // mayor impacto. Las más viejas se descartan.
+  noticias.sort((a, b) => {
+    if (a.fecha !== b.fecha) return a.fecha < b.fecha ? 1 : -1;
+    return b.peso - a.peso;
+  });
+  const noticiasTop = noticias.slice(0, 20);
 return NextResponse.json({
     mesesDisponibles,
     mesFiltro: mesFiltro || null,
@@ -827,8 +894,7 @@ tagsResumen,
        estatusPorDia,
     todosLosEstatus,
       diasPendientes,
-    noticias,
-    diasCerrados,
+    noticias: noticiasTop,
   });
   } catch (err: any) {
     console.error("Error en /api/dashboard-data:", err);
