@@ -2341,9 +2341,17 @@ function MapaColombia({ porDepartamento, novedadesPorDepartamento }: any) {
                 <div style={{ color: "#fca5a5" }}>🚫 Cancelado: {hover.base.pctCancelado}%</div>
               </>
             )}
-            {hover.nov && (
+                       {hover.nov && (
               <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #334155" }}>
-                <div style={{ color: "#fde047" }}>⚠️ Novedades: <strong>{hover.nov.total}</strong></div>
+                <div style={{ color: "#fde047" }}>
+                  ⚠️ Novedades: <strong>{hover.nov.total}</strong>
+                  {hover.base && hover.base.total > 0 && (
+                    <span style={{ color: "#94a3b8" }}>
+                      {" "}
+                      ({Math.round((hover.nov.total / hover.base.total) * 1000) / 10}% de los envíos)
+                    </span>
+                  )}
+                </div>
                 <div style={{ color: "#fca5a5" }}>Sin resolver: {hover.nov.sinResolver}</div>
                 <div style={{ color: "#86efac" }}>Resueltas: {hover.nov.resueltas}</div>
               </div>
