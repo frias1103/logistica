@@ -2175,3 +2175,9 @@ function MapaColombia({ porDepartamento }: any) {
           <p style={{ color: "#64748b" }}>Pasá el mouse sobre un departamento para ver sus datos.</p>
         )}
         <p style={{ color: "#64748b", fontSize: 12, marginTop: 12 }}>
+                    La intensidad del azul indica el volumen de envíos. Los departamentos sin envíos quedan en gris.
+        </p>
+      </div>
+    </div>
+  );
+}
