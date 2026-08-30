@@ -666,7 +666,38 @@ const seguimiento = {
     })
     .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
   const todosLosEstatus = Array.from(todosLosEstatusSet).sort();
+  // =========================================================
+  // 10. DÍAS PENDIENTES DE CIERRE
+  // =========================================================
+  const diasMap = new Map<string, any[]>();
+  for (const o of orders!) {
+    if (esHuerfana(o) || esDuplicado(o)) continue;
+    if (!o.fecha_orden) continue;
+    if (!diasMap.has(o.fecha_orden)) diasMap.set(o.fecha_orden, []);
+    diasMap.get(o.fecha_orden)!.push(o);
+  }
 
+  const diasPendientes = Array.from(diasMap.entries())
+    .map(([fecha, ords]) => {
+      const abiertas = ords.filter((o) => !esTerminal((o.estatus_actual || "").trim()));
+      return {
+        fecha,
+        totalDia: ords.length,
+        cantidadAbiertas: abiertas.length,
+        cerrado: abiertas.length === 0,
+        ordenes: abiertas.map((o) => ({
+          id: o.id,
+          numero_guia: o.numero_guia,
+          nombre_cliente: o.nombre_cliente,
+          telefono: o.telefono,
+          ciudad_destino: o.ciudad_destino,
+          estatus_actual: o.estatus_actual,
+          fecha_reportado: o.fecha_reportado || null,
+          nota: o.nota || null,
+        })),
+      };
+    })
+    .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
 return NextResponse.json({
     mesesDisponibles,
     mesFiltro: mesFiltro || null,
@@ -694,8 +725,9 @@ confirmacionesPorVendedorPorDia,
     fechaReporteMaxProductividad,
 tagsResumen,
     seguimiento,
-    estatusPorDia,
+       estatusPorDia,
     todosLosEstatus,
+    diasPendientes,
   });
   } catch (err: any) {
     console.error("Error en /api/dashboard-data:", err);
