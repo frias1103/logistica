@@ -1813,6 +1813,9 @@ function GeneralTab({ data }: any) {
         ))}
       </div>
 
+        <h3 style={h3}>Mapa de envíos por departamento</h3>
+      <MapaColombia porDepartamento={data.porDepartamento} />
+
       <h3 style={h3}>Por departamento</h3>
       <div style={{ marginBottom: 32 }}>
         <Table
@@ -2061,3 +2064,114 @@ function TortaEstadoTransportadora({ t, idx }: any) {
     </div>
   );
 }
+// Normaliza nombres de departamentos para que coincidan entre el GeoJSON y
+// los datos de Dropi (quita tildes, unifica variantes de nombre)
+function normDepto(s: string) {
+  let n = (s || "")
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // quita tildes
+    .replace(/\./g, "")
+    .trim();
+  if (n.includes("SAN ANDRES")) return "SAN ANDRES";
+  if (n.includes("BOGOTA")) return "CUNDINAMARCA"; // Dropi manda Bogotá dentro de Cundinamarca
+  if (n.startsWith("VALLE")) return "VALLE";
+  if (n.includes("NORTE DE SANTANDER")) return "NORTE DE SANTANDER";
+  if (n.includes("GUAJIRA")) return "LA GUAJIRA";
+  return n;
+}
+
+function MapaColombia({ porDepartamento }: any) {
+  const [geo, setGeo] = useState<any>(null);
+  const [errorGeo, setErrorGeo] = useState<string | null>(null);
+  const [hover, setHover] = useState<any>(null);
+
+  useEffect(() => {
+    fetch("/colombia.geo.json")
+      .then((r) => {
+        if (!r.ok) throw new Error("No se encontró /colombia.geo.json");
+        return r.json();
+      })
+      .then(setGeo)
+      .catch((e) => setErrorGeo(e.message));
+  }, []);
+
+  const datosPorDepto = new Map<string, any>();
+  for (const d of porDepartamento || []) {
+    datosPorDepto.set(normDepto(d.departamento), d);
+  }
+  const maxTotal = Math.max(1, ...(porDepartamento || []).map((d: any) => d.total));
+
+  if (errorGeo) {
+    return (
+      <p style={{ color: "#f87171", fontSize: 13, marginBottom: 32 }}>
+        No se pudo cargar el mapa: {errorGeo}. Verificá que el archivo esté en public/colombia.geo.json
+      </p>
+    );
+  }
+  if (!geo) return <p style={{ color: "#64748b", fontSize: 13 }}>Cargando mapa...</p>;
+
+  // Proyección simple: Colombia va aprox de -79 a -66 lon, y de -4.3 a 13.5 lat
+  const W = 520, H = 620;
+  const lonMin = -79.5, lonMax = -66.5, latMin = -4.5, latMax = 13.8;
+  const proj = (lon: number, lat: number): [number, number] => [
+    ((lon - lonMin) / (lonMax - lonMin)) * W,
+    H - ((lat - latMin) / (latMax - latMin)) * H,
+  ];
+
+  function ringToPath(ring: any[]): string {
+    return ring
+      .map((pt: any, i: number) => {
+        const [x, y] = proj(pt[0], pt[1]);
+        return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+      })
+      .join(" ") + " Z";
+  }
+
+  function featureToPath(f: any): string {
+    const g = f.geometry;
+    if (!g) return "";
+    if (g.type === "Polygon") return g.coordinates.map(ringToPath).join(" ");
+    if (g.type === "MultiPolygon") return g.coordinates.flat().map(ringToPath).join(" ");
+    return "";
+  }
+
+  function nombreDeFeature(f: any): string {
+    const p = f.properties || {};
+    return p.NOMBRE_DPT || p.name || p.NOMBRE || p.dpto || p.DPTO_CNMBR || "";
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 20, flexWrap: "wrap", background: "#1e293b", borderRadius: 10, padding: 16, marginBottom: 32 }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: 420, maxWidth: "100%", height: "auto" }}>
+        {geo.features.map((f: any, i: number) => {
+          const nombre = nombreDeFeature(f);
+          const info = datosPorDepto.get(normDepto(nombre));
+          const intensidad = info ? 0.15 + (info.total / maxTotal) * 0.75 : 0;
+          return (
+            <path
+              key={i}
+              d={featureToPath(f)}
+              fill={info ? `rgba(59, 130, 246, ${intensidad})` : "#0f172a"}
+              stroke="#475569"
+              strokeWidth="0.5"
+              style={{ cursor: info ? "pointer" : "default" }}
+              onMouseEnter={() => info && setHover({ nombre, ...info })}
+              onMouseLeave={() => setHover(null)}
+            />
+          );
+        })}
+      </svg>
+      <div style={{ flex: 1, minWidth: 220, fontSize: 13 }}>
+        {hover ? (
+          <div style={{ background: "#0f172a", borderRadius: 8, padding: 14 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{hover.departamento}</div>
+            <div style={{ marginBottom: 4 }}>📦 Envíos: <strong>{hover.total}</strong></div>
+            <div style={{ color: "#86efac" }}>✅ Entregado: {hover.pctEntregado}%</div>
+            <div style={{ color: "#fdba74" }}>🔁 Devolución: {hover.pctDevolucion}%</div>
+            <div style={{ color: "#fca5a5" }}>🚫 Cancelado: {hover.pctCancelado}%</div>
+          </div>
+        ) : (
+          <p style={{ color: "#64748b" }}>Pasá el mouse sobre un departamento para ver sus datos.</p>
+        )}
+        <p style={{ color: "#64748b", fontSize: 12, marginTop: 12 }}>
