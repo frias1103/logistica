@@ -128,7 +128,15 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
         ...g,
         ordenes: g.ordenes.map((o: any) => (o.id === id ? { ...o, fecha_reportado: fecha } : o)),
       }));
-      return { ...prev, seguimiento: { ...prev.seguimiento, grupos: nuevosGrupos } };
+      const nuevosDias = (prev.diasPendientes || []).map((d: any) => ({
+        ...d,
+        ordenes: d.ordenes.map((o: any) => (o.id === id ? { ...o, fecha_reportado: fecha } : o)),
+      }));
+      return {
+        ...prev,
+        seguimiento: { ...prev.seguimiento, grupos: nuevosGrupos },
+        diasPendientes: nuevosDias,
+      };
     });
   }
 
@@ -139,7 +147,15 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
         ...g,
         ordenes: g.ordenes.map((o: any) => (o.id === id ? { ...o, nota } : o)),
       }));
-      return { ...prev, seguimiento: { ...prev.seguimiento, grupos: nuevosGrupos } };
+      const nuevosDias = (prev.diasPendientes || []).map((d: any) => ({
+        ...d,
+        ordenes: d.ordenes.map((o: any) => (o.id === id ? { ...o, nota } : o)),
+      }));
+      return {
+        ...prev,
+        seguimiento: { ...prev.seguimiento, grupos: nuevosGrupos },
+        diasPendientes: nuevosDias,
+      };
     });
   }
   const tabs: { key: Tab; label: string }[] = [
@@ -149,7 +165,8 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
     { key: "dinero", label: "Dinero" },
     { key: "producto", label: "Producto" },
     { key: "productividad", label: "Productividad" },
-    { key: "historialEstatus", label: "Historial de Estatus" },
+     { key: "historialEstatus", label: "Historial de Estatus" },
+    { key: "diasPendientes", label: "Días Pendientes" },
     { key: "tags", label: "Tags" },
   ];
 
@@ -211,10 +228,10 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
       {tab === "producto" && <ProductoTab data={data} />}
       {tab === "productividad" && <ProductividadTab data={data} />}
       {tab === "historialEstatus" && <HistorialEstatusTab data={data} />}
-      {tab === "tags" && <TagsTab data={data} />}
-    </div>
-  );
-}
+       {tab === "tags" && <TagsTab data={data} />}
+      {tab === "diasPendientes" && (
+        <DiasPendientesTab data={data} token={token} onMarcar={actualizarFechaReportado} onNota={actualizarNota} />
+      )}
 function nombreMes(m: string) {
   const [anio, mes] = m.split("-");
   const nombres = [
@@ -1348,3 +1365,250 @@ const selectStyle: React.CSSProperties = {
   borderRadius: 8,
   fontSize: 13,
 };
+
+    const DIAS_PAGE_SIZE = 50;
+
+function DiasPendientesTab({ data, token, onMarcar, onNota }: any) {
+  const dias: any[] = data.diasPendientes || [];
+  const abiertos = dias.filter((d) => !d.cerrado);
+  const cerrados = dias.filter((d) => d.cerrado);
+
+  return (
+    <div>
+      <p style={{ color: "#94a3b8", marginBottom: 16 }}>
+        Agrupa los pedidos por el día en que se hicieron (no por estatus). Un día queda
+        "cerrado" cuando ya no le queda ningún pedido en un estatus abierto (todos llegaron
+        a entregado, cancelado, devolución o rechazado).
+      </p>
+
+      <h3 style={h3}>
+        Días con pedidos pendientes — {abiertos.reduce((s, d) => s + d.cantidadAbiertas, 0)} pedidos en total
+      </h3>
+      {abiertos.map((d) => (
+        <GrupoDiaPendiente key={d.fecha} dia={d} token={token} onMarcar={onMarcar} onNota={onNota} />
+      ))}
+
+      {cerrados.length > 0 && (
+        <>
+          <h3 style={h3}>Días cerrados</h3>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 24 }}>
+            {cerrados.map((d) => (
+              <div
+                key={d.fecha}
+                style={{
+                  background: "rgba(34, 197, 94, 0.15)",
+                  border: "1px solid rgba(34, 197, 94, 0.4)",
+                  borderRadius: 8,
+                  padding: "8px 14px",
+                  fontSize: 13,
+                }}
+              >
+                <div style={{ fontWeight: 700 }}>{formatFecha(d.fecha)}</div>
+                <div style={{ color: "#86efac" }}>✓ Día cerrado ({d.totalDia} pedidos)</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function GrupoDiaPendiente({ dia, token, onMarcar, onNota }: any) {
+  const [page, setPage] = useState(0);
+  const [copiado, setCopiado] = useState(false);
+  const [copiadoTel, setCopiadoTel] = useState(false);
+
+  const totalPaginas = Math.max(1, Math.ceil(dia.ordenes.length / DIAS_PAGE_SIZE));
+  const paginaActual = Math.min(page, totalPaginas - 1);
+  const visibles = dia.ordenes.slice(
+    paginaActual * DIAS_PAGE_SIZE,
+    paginaActual * DIAS_PAGE_SIZE + DIAS_PAGE_SIZE
+  );
+
+  const guiasDelDia: string[] = dia.ordenes.map((o: any) => o.numero_guia).filter(Boolean);
+
+  function formatTelefonoCO(tel: string): string {
+    const limpio = String(tel).replace(/\D/g, "");
+    if (limpio.startsWith("57") && limpio.length > 10) return `+${limpio}`;
+    return `+57${limpio}`;
+  }
+  const telefonosDelDia: string[] = dia.ordenes
+    .map((o: any) => o.telefono)
+    .filter(Boolean)
+    .map(formatTelefonoCO);
+
+  async function copiarGuias() {
+    try {
+      await navigator.clipboard.writeText(guiasDelDia.join("\n"));
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 1500);
+    } catch {
+      alert("No se pudo copiar automáticamente. Probá con el botón de descargar.");
+    }
+  }
+  function descargarGuias() {
+    const blob = new Blob([guiasDelDia.join("\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `guias_${dia.fecha}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  async function copiarTelefonos() {
+    try {
+      await navigator.clipboard.writeText(telefonosDelDia.join("\n"));
+      setCopiadoTel(true);
+      setTimeout(() => setCopiadoTel(false), 1500);
+    } catch {
+      alert("No se pudo copiar automáticamente. Probá con el botón de descargar.");
+    }
+  }
+  function descargarTelefonos() {
+    const blob = new Blob([telefonosDelDia.join("\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `telefonos_${dia.fecha}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function marcarReportado(id: string, fecha: string | null) {
+    const anterior = dia.ordenes.find((o: any) => o.id === id)?.fecha_reportado ?? null;
+    onMarcar(id, fecha);
+    try {
+      const res = await fetch("/api/marcar-reportado", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ id, fecha }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        alert(`No se pudo guardar la marca: ${json.error || res.statusText}`);
+        onMarcar(id, anterior);
+      }
+    } catch {
+      alert("No se pudo guardar la marca (falló la conexión). Intentá de nuevo.");
+      onMarcar(id, anterior);
+    }
+  }
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div
+        style={{
+          background: "#334155",
+          color: "white",
+          fontWeight: 600,
+          padding: "10px 14px",
+          borderRadius: "8px 8px 0 0",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 8,
+        }}
+      >
+        <span>
+          {formatFecha(dia.fecha)} — {dia.cantidadAbiertas} pedidos abiertos de {dia.totalDia} totales
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400, fontSize: 13 }}>
+          {guiasDelDia.length > 0 && (
+            <>
+              <button onClick={copiarGuias} style={{ ...secondaryBtn, padding: "4px 10px" }}>
+                {copiado ? "¡Copiado!" : `Copiar ${guiasDelDia.length} guías`}
+              </button>
+              <button onClick={descargarGuias} style={{ ...secondaryBtn, padding: "4px 10px" }}>
+                Descargar guías .txt
+              </button>
+            </>
+          )}
+          {telefonosDelDia.length > 0 && (
+            <>
+              <button onClick={copiarTelefonos} style={{ ...secondaryBtn, padding: "4px 10px" }}>
+                {copiadoTel ? "¡Copiado!" : `Copiar ${telefonosDelDia.length} teléfonos`}
+              </button>
+              <button onClick={descargarTelefonos} style={{ ...secondaryBtn, padding: "4px 10px" }}>
+                Descargar teléfonos .txt
+              </button>
+            </>
+          )}
+          {totalPaginas > 1 && (
+            <>
+              <button
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={paginaActual === 0}
+                style={{ ...secondaryBtn, padding: "4px 10px", opacity: paginaActual === 0 ? 0.4 : 1 }}
+              >
+                ← Anterior
+              </button>
+              Página {paginaActual + 1} de {totalPaginas}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPaginas - 1, p + 1))}
+                disabled={paginaActual === totalPaginas - 1}
+                style={{
+                  ...secondaryBtn,
+                  padding: "4px 10px",
+                  opacity: paginaActual === totalPaginas - 1 ? 0.4 : 1,
+                }}
+              >
+                Siguiente →
+              </button>
+            </>
+          )}
+        </span>
+      </div>
+      <div style={{ overflowX: "auto", background: "#1e293b", borderRadius: "0 0 10px 10px" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th style={th}>Número guía</th>
+              <th style={th}>Cliente</th>
+              <th style={th}>Teléfono</th>
+              <th style={th}>Ciudad</th>
+              <th style={th}>Estatus</th>
+              <th style={th}>Reportado</th>
+              <th style={th}>Nota</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibles.map((o: any) => (
+              <tr key={o.id}>
+                <td style={td}>{o.numero_guia || "-"}</td>
+                <td style={td}>{o.nombre_cliente || "-"}</td>
+                <td style={td}>{o.telefono || "-"}</td>
+                <td style={td}>{o.ciudad_destino || "-"}</td>
+                <td style={td}>{o.estatus_actual || "-"}</td>
+                <td style={td}>
+                  {o.fecha_reportado ? (
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                      {formatFecha(o.fecha_reportado)}
+                      <button
+                        onClick={() => marcarReportado(o.id, null)}
+                        style={{ ...secondaryBtn, padding: "2px 8px", fontSize: 11 }}
+                      >
+                        Quitar
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => marcarReportado(o.id, dia.fecha)}
+                      style={{ ...secondaryBtn, padding: "2px 8px", fontSize: 11 }}
+                    >
+                      Marcar hoy
+                    </button>
+                  )}
+                </td>
+                <td style={td}>
+                  <NotaCell orderId={o.id} notaInicial={o.nota} token={token} onGuardado={onNota} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
