@@ -1374,46 +1374,169 @@ const selectStyle: React.CSSProperties = {
 
 function DiasPendientesTab({ data, token, onMarcar, onNota }: any) {
   const dias: any[] = data.diasPendientes || [];
-  const abiertos = dias.filter((d) => !d.cerrado);
-  const cerrados = dias.filter((d) => d.cerrado);
+  const [estatusExcluidos, setEstatusExcluidos] = useState<string[]>([]);
+  const [desde, setDesde] = useState<string>("");
+  const [hasta, setHasta] = useState<string>("");
+  const [diaAbierto, setDiaAbierto] = useState<string | null>(null);
+
+  // Todos los estatus presentes en los días pendientes (para el filtro)
+  const todosLosEstatus = Array.from(
+    new Set(dias.flatMap((d) => d.ordenes.map((o: any) => (o.estatus_actual || "SIN ESTATUS").trim())))
+  ).sort() as string[];
+
+  function toggleEstatus(e: string) {
+    setEstatusExcluidos((prev) => (prev.includes(e) ? prev.filter((x) => x !== e) : [...prev, e]));
+  }
+
+  // Aplicamos los dos filtros: rango de fechas + estatus excluidos
+  const diasFiltrados = dias
+    .filter((d) => {
+      if (desde && d.fecha < desde) return false;
+      if (hasta && d.fecha > hasta) return false;
+      return true;
+    })
+    .map((d) => ({
+      ...d,
+      ordenes: d.ordenes.filter(
+        (o: any) => !estatusExcluidos.includes((o.estatus_actual || "SIN ESTATUS").trim())
+      ),
+    }))
+    .filter((d) => d.ordenes.length > 0);
+
+  const totalPedidos = diasFiltrados.reduce((s, d) => s + d.ordenes.length, 0);
 
   return (
     <div>
       <p style={{ color: "#94a3b8", marginBottom: 16 }}>
-        Agrupa los pedidos por el día en que se hicieron (no por estatus). Un día queda
-        "cerrado" cuando ya no le queda ningún pedido en un estatus abierto (todos llegaron
-        a entregado, cancelado, devolución o rechazado).
+        Agrupa los pedidos por el día en que se hicieron. Un día queda "cerrado" cuando ya no
+        le queda ningún pedido en un estatus abierto. Hacé clic en una fila para ver el detalle.
       </p>
 
-      <h3 style={h3}>
-        Días con pedidos pendientes — {abiertos.reduce((s, d) => s + d.cantidadAbiertas, 0)} pedidos en total
-      </h3>
-      {abiertos.map((d) => (
-        <GrupoDiaPendiente key={d.fecha} dia={d} token={token} onMarcar={onMarcar} onNota={onNota} />
-      ))}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+        <span style={{ color: "#94a3b8", fontSize: 13 }}>Desde:</span>
+        <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} style={selectStyle} />
+        <span style={{ color: "#94a3b8", fontSize: 13 }}>Hasta:</span>
+        <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} style={selectStyle} />
+        {(desde || hasta) && (
+          <button
+            onClick={() => {
+              setDesde("");
+              setHasta("");
+            }}
+            style={{ ...secondaryBtn, padding: "4px 10px" }}
+          >
+            Limpiar fechas
+          </button>
+        )}
+      </div>
 
-      {cerrados.length > 0 && (
-        <>
-          <h3 style={h3}>Días cerrados</h3>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 24 }}>
-            {cerrados.map((d) => (
-              <div
-                key={d.fecha}
-                style={{
-                  background: "rgba(34, 197, 94, 0.15)",
-                  border: "1px solid rgba(34, 197, 94, 0.4)",
-                  borderRadius: 8,
-                  padding: "8px 14px",
-                  fontSize: 13,
-                }}
-              >
-                <div style={{ fontWeight: 700 }}>{formatFecha(d.fecha)}</div>
-                <div style={{ color: "#86efac" }}>✓ Día cerrado ({d.totalDia} pedidos)</div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+      <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ color: "#94a3b8", fontSize: 13 }}>Excluir estatus:</span>
+        {estatusExcluidos.length > 0 && (
+          <button onClick={() => setEstatusExcluidos([])} style={{ ...secondaryBtn, padding: "4px 10px" }}>
+            Limpiar ({estatusExcluidos.length})
+          </button>
+        )}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "8px 16px",
+          background: "#1e293b",
+          borderRadius: 10,
+          padding: 16,
+          marginBottom: 24,
+        }}
+      >
+        {todosLosEstatus.map((e) => (
+          <label key={e} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
+            <input type="checkbox" checked={estatusExcluidos.includes(e)} onChange={() => toggleEstatus(e)} />
+            {e}
+          </label>
+        ))}
+      </div>
+
+      <div style={{ overflowX: "auto", background: "#1e293b", borderRadius: 10, marginBottom: 24 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th style={th}>Fecha</th>
+              <th style={th}>Pedidos pendientes</th>
+              <th style={th}>% del total</th>
+              <th style={th}>Estado</th>
+              <th style={th}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {diasFiltrados.map((d) => {
+              const abierto = diaAbierto === d.fecha;
+              const pct = totalPedidos ? Math.round((d.ordenes.length / totalPedidos) * 1000) / 10 : 0;
+              return (
+                <Fragment key={d.fecha}>
+                  <tr
+                    onClick={() => setDiaAbierto(abierto ? null : d.fecha)}
+                    style={{ cursor: "pointer", borderTop: "1px solid #334155" }}
+                  >
+                    <td style={{ ...td, fontWeight: 600 }}>{formatFecha(d.fecha)}</td>
+                    <td style={td}>{d.ordenes.length}</td>
+                    <td style={td}>{pct}%</td>
+                    <td style={td}>
+                      {d.cerrado ? (
+                        <span style={{ color: "#86efac" }}>✓ Cerrado</span>
+                      ) : (
+                        <span style={{ color: "#fbbf24" }}>Pendiente</span>
+                      )}
+                    </td>
+                    <td style={td}>{abierto ? "▲ Ocultar" : "▼ Ver detalle"}</td>
+                  </tr>
+                  {abierto && (
+                    <tr>
+                      <td colSpan={5} style={{ ...td, padding: 0, background: "#0f172a" }}>
+                        <div style={{ padding: 16 }}>
+                          <DetalleDia dia={d} token={token} onMarcar={onMarcar} onNota={onNota} />
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+            <tr style={{ background: "#334155", fontWeight: 700 }}>
+              <td style={td}>TOTAL</td>
+              <td style={td}>{totalPedidos}</td>
+              <td style={td}>100%</td>
+              <td style={td}>{diasFiltrados.length} días</td>
+              <td style={td}></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function DetalleDia({ dia, token, onMarcar, onNota }: any) {
+  // Agrupamos los pedidos de este día por estatus
+  const porEstatus = new Map<string, any[]>();
+  for (const o of dia.ordenes) {
+    const e = (o.estatus_actual || "SIN ESTATUS").trim();
+    if (!porEstatus.has(e)) porEstatus.set(e, []);
+    porEstatus.get(e)!.push(o);
+  }
+  const grupos = Array.from(porEstatus.entries()).sort((a, b) => b[1].length - a[1].length);
+
+  return (
+    <div>
+      {grupos.map(([estatus, ordenes]) => (
+        <GrupoDiaPendiente
+          key={estatus}
+          dia={{ ...dia, ordenes, estatusLabel: estatus }}
+          token={token}
+          onMarcar={onMarcar}
+          onNota={onNota}
+        />
+      ))}
     </div>
   );
 }
@@ -1515,8 +1638,9 @@ function GrupoDiaPendiente({ dia, token, onMarcar, onNota }: any) {
           gap: 8,
         }}
       >
-        <span>
-          {formatFecha(dia.fecha)} — {dia.cantidadAbiertas} pedidos abiertos de {dia.totalDia} totales
+                <span>
+          {dia.estatusLabel ? `${dia.estatusLabel} — ` : ""}
+          {dia.ordenes.length} pedidos — {formatFecha(dia.fecha)}
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400, fontSize: 13 }}>
           {guiasDelDia.length > 0 && (
