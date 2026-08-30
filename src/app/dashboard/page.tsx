@@ -1821,6 +1821,10 @@ function GeneralTab({ data }: any) {
 
       <h3 style={h3}>Novedades nuevas por día</h3>
       <NovedadesPorDia dias={data.novedadesPorDia || []} />
+    </div>
+  );
+}
+
 function NovedadesPorDia({ dias }: any) {
   const [desde, setDesde] = useState<string>("");
   const [hasta, setHasta] = useState<string>("");
