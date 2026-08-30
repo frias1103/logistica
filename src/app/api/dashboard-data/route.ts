@@ -863,6 +863,71 @@ const seguimiento = {
     return b.peso - a.peso;
   });
   const noticiasTop = noticias.slice(0, 20);
+      // =========================================================
+  // 12. NOVEDADES POR DEPARTAMENTO Y POR DÍA
+  // =========================================================
+  const novDeptoMap = new Map<string, any>();
+  const novPorDiaMap = new Map<string, number>();
+  const novDetallePorDia = new Map<string, any[]>();
+
+  for (const o of orders!) {
+    if (esHuerfana(o) || esDuplicado(o)) continue;
+
+    const depto = (o.departamento_destino || "SIN DEPARTAMENTO").trim();
+    const estatus = (o.estatus_actual || "").trim().toUpperCase();
+    const esNovedad = estatus === "NOVEDAD" || estatus === "NOVEDAD SOLUCIONADA";
+
+    if (!novDeptoMap.has(depto)) {
+      novDeptoMap.set(depto, {
+        enviados: 0, entregado: 0, devolucion: 0, en_transito: 0,
+        novedades: 0, novedadesSinResolver: 0,
+      });
+    }
+    const nd = novDeptoMap.get(depto)!;
+    nd.enviados++;
+    const b = bucketFor(o.estatus_actual);
+    if (b === "entregado") nd.entregado++;
+    else if (b === "devolucion") nd.devolucion++;
+    else if (b === "en_transito") nd.en_transito++;
+    if (esNovedad) {
+      nd.novedades++;
+      if (estatus === "NOVEDAD") nd.novedadesSinResolver++;
+    }
+
+    // Novedades por día (usa la fecha en que Dropi marcó la novedad)
+    if (o.fecha_novedad) {
+      novPorDiaMap.set(o.fecha_novedad, (novPorDiaMap.get(o.fecha_novedad) || 0) + 1);
+      if (!novDetallePorDia.has(o.fecha_novedad)) novDetallePorDia.set(o.fecha_novedad, []);
+      novDetallePorDia.get(o.fecha_novedad)!.push({
+        id: o.id,
+        numero_guia: o.numero_guia,
+        nombre_cliente: o.nombre_cliente,
+        telefono: o.telefono,
+        ciudad_destino: o.ciudad_destino,
+        departamento_destino: o.departamento_destino,
+        transportadora: o.transportadora,
+        estatus_actual: o.estatus_actual,
+        fecha_solucion: o.fecha_solucion,
+      });
+    }
+  }
+
+  const novedadesPorDepartamento = Array.from(novDeptoMap.entries())
+    .map(([departamento, d]) => ({
+      departamento,
+      ...d,
+      pctNovedades: pct(d.novedades, d.enviados),
+    }))
+    .filter((d) => d.novedades > 0)
+    .sort((a, b) => b.novedades - a.novedades);
+
+  const novedadesPorDia = Array.from(novPorDiaMap.entries())
+    .map(([fecha, cantidad]) => ({
+      fecha,
+      cantidad,
+      ordenes: novDetallePorDia.get(fecha) || [],
+    }))
+    .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
 return NextResponse.json({
     mesesDisponibles,
     mesFiltro: mesFiltro || null,
@@ -895,6 +960,8 @@ tagsResumen,
     todosLosEstatus,
       diasPendientes,
     noticias: noticiasTop,
+    novedadesPorDepartamento,
+    novedadesPorDia,
   });
   } catch (err: any) {
     console.error("Error en /api/dashboard-data:", err);
