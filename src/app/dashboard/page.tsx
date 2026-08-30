@@ -1804,8 +1804,8 @@ function GeneralTab({ data }: any) {
       </div>
 
         <h3 style={h3}>Novedades</h3>
-      <Noticias noticias={data.noticias || []} diasCerrados={data.diasCerrados || []} />
-
+      <Noticias noticias={data.noticias || []} />
+      
       <h3 style={h3}>Desempeño por transportadora</h3>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, marginBottom: 32 }}>
         {(data.transportadoras || []).map((t: any, i: number) => (
@@ -1964,41 +1964,39 @@ function CalendarioCierre({ dias, mes }: { dias: any[]; mes: string }) {
     </div>
   );
 }
-function Noticias({ noticias, diasCerrados }: any) {
-  if (noticias.length === 0 && diasCerrados.length === 0) {
+function Noticias({ noticias }: any) {
+  if (!noticias || noticias.length === 0) {
     return <p style={{ color: "#64748b", fontSize: 13, marginBottom: 32 }}>Sin novedades para mostrar.</p>;
   }
   return (
     <div style={{ marginBottom: 32, display: "grid", gap: 8 }}>
-      {diasCerrados.map((d: any) => (
-        <div
-          key={d.fecha}
-          style={{
-            background: "rgba(34, 197, 94, 0.12)",
-            borderLeft: "4px solid #22c55e",
-            borderRadius: 8,
-            padding: "10px 14px",
-            fontSize: 13,
-          }}
-        >
-          ✅ <strong>Día cerrado:</strong> {formatFecha(d.fecha)} — {d.totalDia} pedidos completados
-        </div>
-      ))}
-      {noticias.map((n: any, i: number) => (
-        <div
-          key={i}
-          style={{
-            background: n.tipo === "bueno" ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)",
-            borderLeft: `4px solid ${n.tipo === "bueno" ? "#22c55e" : "#ef4444"}`,
-            borderRadius: 8,
-            padding: "10px 14px",
-            fontSize: 13,
-          }}
-        >
-          {n.tipo === "bueno" ? "📉" : "📈"} <strong>{n.categoria}:</strong> {n.texto}{" "}
-          <span style={{ color: "#94a3b8" }}>({n.volumen} pedidos en los últimos 20 días)</span>
-        </div>
-      ))}
+      {noticias.map((n: any, i: number) => {
+        const bueno = n.tipo === "bueno";
+        return (
+          <div
+            key={i}
+            style={{
+              background: bueno ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)",
+              borderLeft: `4px solid ${bueno ? "#22c55e" : "#ef4444"}`,
+              borderRadius: 8,
+              padding: "10px 14px",
+              fontSize: 13,
+              display: "flex",
+              gap: 12,
+              alignItems: "baseline",
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ color: "#94a3b8", fontSize: 12, whiteSpace: "nowrap" }}>
+              {formatFecha(n.fecha)}
+            </span>
+            <span style={{ flex: 1, minWidth: 220 }}>
+              <strong>{n.categoria}:</strong> {n.texto}
+              {n.detalle && <span style={{ color: "#94a3b8" }}> — {n.detalle}</span>}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
