@@ -232,6 +232,10 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
       {tab === "diasPendientes" && (
         <DiasPendientesTab data={data} token={token} onMarcar={actualizarFechaReportado} onNota={actualizarNota} />
       )}
+    </div>
+  );
+}
+
 function nombreMes(m: string) {
   const [anio, mes] = m.split("-");
   const nombres = [
