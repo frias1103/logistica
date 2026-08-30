@@ -1819,8 +1819,34 @@ function GeneralTab({ data }: any) {
         novedadesPorDepartamento={data.novedadesPorDepartamento || []}
       />
 
-      <h3 style={h3}>Novedades nuevas por día</h3>
+       <h3 style={h3}>Novedades nuevas por día</h3>
       <NovedadesPorDia dias={data.novedadesPorDia || []} />
+
+      <h3 style={h3}>Por departamento</h3>
+      <div style={{ marginBottom: 32 }}>
+        <Table
+          headers={["Departamento", "Envíos", "% Entregado", "% Devolución", "% Cancelado"]}
+          rows={(data.porDepartamento || []).map((x: any) => [
+            x.departamento,
+            x.total,
+            `${x.pctEntregado}%`,
+            `${x.pctDevolucion}%`,
+            `${x.pctCancelado}%`,
+          ])}
+        />
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 12px" }}>
+        <h3 style={{ ...h3, margin: 0 }}>Calendario de cierre</h3>
+        <select value={mesCal} onChange={(e) => setMesCal(e.target.value)} style={selectStyle}>
+          {mesesDeDias.map((m) => (
+            <option key={m} value={m}>
+              {nombreMes(m)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <CalendarioCierre dias={dias} mes={mesCal} />
     </div>
   );
 }
@@ -1896,36 +1922,7 @@ function NovedadesPorDia({ dias }: any) {
   );
 }
       
-      <h3 style={h3}>Por departamento</h3>
-      <div style={{ marginBottom: 32 }}>
-        <Table
-          headers={["Departamento", "Envíos", "% Entregado", "% Devolución", "% Cancelado"]}
-                rows={(data.porDepartamento || []).map((x: any) => [
-            x.departamento,
-            x.total,
-            `${x.pctEntregado}%`,
-            `${x.pctDevolucion}%`,
-            `${x.pctCancelado}%`,
-          ])}
-        />
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 12px" }}>
-        <h3 style={{ ...h3, margin: 0 }}>Calendario de cierre</h3>
-        <select value={mesCal} onChange={(e) => setMesCal(e.target.value)} style={selectStyle}>
-          {mesesDeDias.map((m) => (
-            <option key={m} value={m}>
-              {nombreMes(m)}
-            </option>
-          ))}
-        </select>
-      </div>
-      <CalendarioCierre dias={dias} mes={mesCal} />
-    </div>
-  );
-}
-
-function TortaTransportadoras({ transportadoras }: any) {
+    function TortaTransportadoras({ transportadoras }: any) {
   const datos = (transportadoras || []).slice(0, 8).map((t: any) => ({
     nombre: t.transportadora,
     valor: t.enviados,
