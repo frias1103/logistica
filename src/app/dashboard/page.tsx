@@ -2348,30 +2348,8 @@ function MapaColombia({ porDepartamento, novedadesPorDepartamento }: any) {
     </div>
   );
 }
-function NovedadesPorDia({ dias }: any) {
-  const [diaSel, setDiaSel] = useState<string>("__todos__");
 
-  if (!dias || dias.length === 0) {
-    return <p style={{ color: "#64748b", fontSize: 13, marginBottom: 32 }}>Sin novedades registradas.</p>;
-  }
-
-  const seleccionado = dias.find((d: any) => d.fecha === diaSel);
-
-  return (
-    <div style={{ marginBottom: 32 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-        <span style={{ color: "#94a3b8", fontSize: 13 }}>Ver detalle del día:</span>
-        <select value={diaSel} onChange={(e) => setDiaSel(e.target.value)} style={selectStyle}>
-          <option value="__todos__">Solo el resumen</option>
-          {dias.map((d: any) => (
-            <option key={d.fecha} value={d.fecha}>
-              {formatFecha(d.fecha)} ({d.cantidad})
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {!seleccionado ? (
+     {!seleccionado ? (
         <Table
           headers={["Fecha", "Novedades nuevas"]}
           rows={dias.slice(0, 30).map((d: any) => [formatFecha(d.fecha), d.cantidad])}
