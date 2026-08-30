@@ -1813,7 +1813,27 @@ function GeneralTab({ data }: any) {
         ))}
       </div>
 
-        <h3 style={h3}>Mapa de envíos por departamento</h3>
+       <h3 style={h3}>Novedades por departamento</h3>
+      <div style={{ marginBottom: 32 }}>
+        <Table
+          headers={["Departamento", "Novedades", "% sobre envíos", "Sin resolver", "Enviados", "Entregados", "Devoluciones", "En tránsito"]}
+          rows={(data.novedadesPorDepartamento || []).map((d: any) => [
+            d.departamento,
+            d.novedades,
+            `${d.pctNovedades}%`,
+            d.novedadesSinResolver,
+            d.enviados,
+            d.entregado,
+            d.devolucion,
+            d.en_transito,
+          ])}
+        />
+      </div>
+
+      <h3 style={h3}>Novedades nuevas por día</h3>
+      <NovedadesPorDia dias={data.novedadesPorDia || []} />
+
+      <h3 style={h3}>Mapa de envíos por departamento</h3>
       <MapaColombia porDepartamento={data.porDepartamento} />
 
       <h3 style={h3}>Por departamento</h3>
@@ -2112,7 +2132,7 @@ function MapaColombia({ porDepartamento }: any) {
   if (!geo) return <p style={{ color: "#64748b", fontSize: 13 }}>Cargando mapa...</p>;
 
   // Proyección simple: Colombia va aprox de -79 a -66 lon, y de -4.3 a 13.5 lat
-  const W = 520, H = 620;
+  const W = 650, H = 775;
   const lonMin = -79.5, lonMax = -66.5, latMin = -4.5, latMax = 13.8;
   const proj = (lon: number, lat: number): [number, number] => [
     ((lon - lonMin) / (lonMax - lonMin)) * W,
@@ -2143,7 +2163,7 @@ function MapaColombia({ porDepartamento }: any) {
 
   return (
     <div style={{ display: "flex", gap: 20, flexWrap: "wrap", background: "#1e293b", borderRadius: 10, padding: 16, marginBottom: 32 }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: 420, maxWidth: "100%", height: "auto" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: 560, maxWidth: "100%", height: "auto" }}>
         {geo.features.map((f: any, i: number) => {
           const nombre = nombreDeFeature(f);
           const info = datosPorDepto.get(normDepto(nombre));
@@ -2161,7 +2181,55 @@ function MapaColombia({ porDepartamento }: any) {
             />
           );
         })}
+        {geo.features.map((f: any, i: number) => {
+          const nombre = nombreDeFeature(f);
+          const info = datosPorDepto.get(normDepto(nombre));
+          if (!info) return null;
+          const c = centroide(f, proj);
+          if (!c) return null;
+          return (
+            <g key={`lbl${i}`} style={{ pointerEvents: "none" }}>
+              <text
+                x={c[0]}
+                y={c[1]}
+                textAnchor="middle"
+                style={{ fontSize: 9, fill: "#e2e8f0", fontWeight: 600, paintOrder: "stroke" }}
+                stroke="#0f172a"
+                strokeWidth="2.5"
+              >
+                {info.departamento}
+              </text>
+              <text
+                x={c[0]}
+                y={c[1] + 10}
+                textAnchor="middle"
+                style={{ fontSize: 9, fill: "#93c5fd", fontWeight: 700, paintOrder: "stroke" }}
+                stroke="#0f172a"
+                strokeWidth="2.5"
+              >
+                {info.total}
+              </text>
+            </g>
+          );
+        })}
       </svg>
+      // Calcula el centro aproximado de un departamento, para ubicar su etiqueta
+function centroide(f: any, proj: (lon: number, lat: number) => [number, number]): [number, number] | null {
+  const g = f.geometry;
+  if (!g) return null;
+  let anillos: any[] = [];
+  if (g.type === "Polygon") anillos = g.coordinates;
+  else if (g.type === "MultiPolygon") anillos = g.coordinates.flat();
+  if (anillos.length === 0) return null;
+  // Usamos el anillo más grande (el cuerpo principal, ignora islas chicas)
+  const principal = anillos.reduce((a: any, b: any) => (b.length > a.length ? b : a), anillos[0]);
+  let sx = 0, sy = 0;
+  for (const pt of principal) {
+    sx += pt[0];
+    sy += pt[1];
+  }
+  return proj(sx / principal.length, sy / principal.length);
+}
       <div style={{ flex: 1, minWidth: 220, fontSize: 13 }}>
         {hover ? (
           <div style={{ background: "#0f172a", borderRadius: 8, padding: 14 }}>
@@ -2178,6 +2246,88 @@ function MapaColombia({ porDepartamento }: any) {
                     La intensidad del azul indica el volumen de envíos. Los departamentos sin envíos quedan en gris.
         </p>
       </div>
+    </div>
+  );
+}
+function NovedadesPorDia({ dias }: any) {
+  const [diaSel, setDiaSel] = useState<string>("__todos__");
+
+  if (!dias || dias.length === 0) {
+    return <p style={{ color: "#64748b", fontSize: 13, marginBottom: 32 }}>Sin novedades registradas.</p>;
+  }
+
+  const seleccionado = dias.find((d: any) => d.fecha === diaSel);
+
+  return (
+    <div style={{ marginBottom: 32 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+        <span style={{ color: "#94a3b8", fontSize: 13 }}>Ver detalle del día:</span>
+        <select value={diaSel} onChange={(e) => setDiaSel(e.target.value)} style={selectStyle}>
+          <option value="__todos__">Solo el resumen</option>
+          {dias.map((d: any) => (
+            <option key={d.fecha} value={d.fecha}>
+              {formatFecha(d.fecha)} ({d.cantidad})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {!seleccionado ? (
+        <Table
+          headers={["Fecha", "Novedades nuevas"]}
+          rows={dias.slice(0, 30).map((d: any) => [formatFecha(d.fecha), d.cantidad])}
+        />
+      ) : (
+        <div>
+          <div
+            style={{
+              background: "#334155",
+              color: "white",
+              fontWeight: 600,
+              padding: "10px 14px",
+              borderRadius: "8px 8px 0 0",
+            }}
+          >
+            {formatFecha(seleccionado.fecha)} — {seleccionado.cantidad} novedades nuevas
+          </div>
+          <div style={{ overflowX: "auto", background: "#1e293b", borderRadius: "0 0 10px 10px" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={th}>Guía</th>
+                  <th style={th}>Cliente</th>
+                  <th style={th}>Teléfono</th>
+                  <th style={th}>Ciudad</th>
+                  <th style={th}>Departamento</th>
+                  <th style={th}>Transportadora</th>
+                  <th style={th}>Estatus actual</th>
+                  <th style={th}>Resuelta</th>
+                </tr>
+              </thead>
+              <tbody>
+                {seleccionado.ordenes.map((o: any) => (
+                  <tr key={o.id}>
+                    <td style={td}>{o.numero_guia || "-"}</td>
+                    <td style={td}>{o.nombre_cliente || "-"}</td>
+                    <td style={td}>{o.telefono || "-"}</td>
+                    <td style={td}>{o.ciudad_destino || "-"}</td>
+                    <td style={td}>{o.departamento_destino || "-"}</td>
+                    <td style={td}>{o.transportadora || "-"}</td>
+                    <td style={td}>{o.estatus_actual || "-"}</td>
+                    <td style={td}>
+                      {o.fecha_solucion ? (
+                        <span style={{ color: "#86efac" }}>{formatFecha(o.fecha_solucion)}</span>
+                      ) : (
+                        <span style={{ color: "#fca5a5" }}>Sin resolver</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
