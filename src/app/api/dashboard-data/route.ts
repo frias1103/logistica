@@ -248,6 +248,27 @@ const ciudadMap = new Map<string, { entregado: number; devolucion: number; cance
     .map(([ciudad, c]) => ({ ciudad, ...c }))
     .sort((a, b) => b.total - a.total);
 
+  // Agrupado por departamento (para la sección General / futuro mapa)
+  const deptoMap = new Map<string, any>();
+  for (const o of orders!) {
+    if (esHuerfana(o) || esDuplicado(o)) continue;
+    const depto = (o.departamento_destino || "SIN DEPARTAMENTO").trim();
+    if (!deptoMap.has(depto)) {
+      deptoMap.set(depto, { entregado: 0, devolucion: 0, cancelado: 0, en_transito: 0, otros: 0, total: 0 });
+    }
+    const dm = deptoMap.get(depto)!;
+    dm[bucketFor(o.estatus_actual)]++;
+    dm.total++;
+  }
+  const porDepartamento = Array.from(deptoMap.entries())
+    .map(([departamento, d]) => ({
+      departamento,
+      ...d,
+      pctDevolucion: pct(d.devolucion, d.total),
+      pctCancelado: pct(d.cancelado, d.total),
+      pctEntregado: pct(d.entregado, d.total),
+    }))
+    .sort((a, b) => b.total - a.total);
   // =========================================================
   // 2. TRANSPORTADORAS + CRUCE CON CIUDAD
   // =========================================================
@@ -710,7 +731,8 @@ return NextResponse.json({
     debugSupabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
     debugPrimeraOrdenKeys: orders!.length > 0 ? Object.keys(orders![0]) : [],
     buckets: bucketsResumen,
-    porCiudad,
+        porCiudad,
+    porDepartamento,
     transportadoras,
     transportadoraCiudad,
     fleteGlobal,
