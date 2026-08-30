@@ -1813,28 +1813,19 @@ function GeneralTab({ data }: any) {
         ))}
       </div>
 
-       <h3 style={h3}>Novedades por departamento</h3>
-      <div style={{ marginBottom: 32 }}>
-        <Table
-          headers={["Departamento", "Novedades", "% sobre envíos", "Sin resolver", "Enviados", "Entregados", "Devoluciones", "En tránsito"]}
-          rows={(data.novedadesPorDepartamento || []).map((d: any) => [
-            d.departamento,
-            d.novedades,
-            `${d.pctNovedades}%`,
-            d.novedadesSinResolver,
-            d.enviados,
-            d.entregado,
-            d.devolucion,
-            d.en_transito,
-          ])}
-        />
-      </div>
+        <h3 style={h3}>Mapa de Colombia</h3>
+      <MapaColombia
+        porDepartamento={data.porDepartamento}
+        novedadesPorDepartamento={data.novedadesPorDepartamento || []}
+      />
 
       <h3 style={h3}>Novedades nuevas por día</h3>
-      <NovedadesPorDia dias={data.novedadesPorDia || []} />
-
-      <h3 style={h3}>Mapa de envíos por departamento</h3>
-      <MapaColombia porDepartamento={data.porDepartamento} />
+      <div style={{ marginBottom: 32 }}>
+        <Table
+          headers={["Fecha", "Novedades nuevas"]}
+          rows={(data.novedadesPorDia || []).slice(0, 40).map((d: any) => [formatFecha(d.fecha), d.cantidad])}
+        />
+      </div>
 
       <h3 style={h3}>Por departamento</h3>
       <div style={{ marginBottom: 32 }}>
@@ -2119,10 +2110,11 @@ function centroide(f: any, proj: (lon: number, lat: number) => [number, number])
   return proj(sx / principal.length, sy / principal.length);
 }
 
-function MapaColombia({ porDepartamento }: any) {
+function MapaColombia({ porDepartamento, novedadesPorDepartamento }: any) {
   const [geo, setGeo] = useState<any>(null);
   const [errorGeo, setErrorGeo] = useState<string | null>(null);
   const [hover, setHover] = useState<any>(null);
+  const [modo, setModo] = useState<"envios" | "novedades">("envios");
 
   useEffect(() => {
     fetch("/colombia.geo.json")
@@ -2138,7 +2130,15 @@ function MapaColombia({ porDepartamento }: any) {
   for (const d of porDepartamento || []) {
     datosPorDepto.set(normDepto(d.departamento), d);
   }
-  const maxTotal = Math.max(1, ...(porDepartamento || []).map((d: any) => d.total));
+  const novPorDepto = new Map<string, any>();
+  for (const d of novedadesPorDepartamento || []) {
+    novPorDepto.set(normDepto(d.departamento), d);
+  }
+  const esNov = modo === "novedades";
+  const maxTotal = esNov
+    ? Math.max(1, ...(novedadesPorDepartamento || []).map((d: any) => d.total))
+    : Math.max(1, ...(porDepartamento || []).map((d: any) => d.total));
+  const colorBase = esNov ? "234, 179, 8" : "59, 130, 246"; // amarillo vs azul
 
   if (errorGeo) {
     return (
@@ -2180,28 +2180,39 @@ function MapaColombia({ porDepartamento }: any) {
   }
 
   return (
-    <div style={{ display: "flex", gap: 20, flexWrap: "wrap", background: "#1e293b", borderRadius: 10, padding: 16, marginBottom: 32 }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: 560, maxWidth: "100%", height: "auto" }}>
+    <div style={{ background: "#1e293b", borderRadius: 10, padding: 16, marginBottom: 32 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        <span style={{ color: "#94a3b8", fontSize: 13 }}>Mostrar en el mapa:</span>
+        <select value={modo} onChange={(e) => setModo(e.target.value as any)} style={selectStyle}>
+          <option value="envios">Pedidos enviados</option>
+          <option value="novedades">Novedades</option>
+        </select>
+      </div>
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+      <svg viewBox={`0 0 ${W} ${H}`}
+         style={{ width: 560, maxWidth: "100%", height: "auto" }}>
         {geo.features.map((f: any, i: number) => {
           const nombre = nombreDeFeature(f);
-          const info = datosPorDepto.get(normDepto(nombre));
+          const base = datosPorDepto.get(normDepto(nombre));
+          const nov = novPorDepto.get(normDepto(nombre));
+          const info = esNov ? nov : base;
           const intensidad = info ? 0.15 + (info.total / maxTotal) * 0.75 : 0;
           return (
             <path
               key={i}
               d={featureToPath(f)}
-              fill={info ? `rgba(59, 130, 246, ${intensidad})` : "#0f172a"}
+              fill={info ? `rgba(${colorBase}, ${intensidad})` : "#0f172a"}
               stroke="#475569"
               strokeWidth="0.5"
               style={{ cursor: info ? "pointer" : "default" }}
-              onMouseEnter={() => info && setHover({ nombre, ...info })}
+              onMouseEnter={() => info && setHover({ base, nov })}
               onMouseLeave={() => setHover(null)}
             />
           );
         })}
         {geo.features.map((f: any, i: number) => {
           const nombre = nombreDeFeature(f);
-          const info = datosPorDepto.get(normDepto(nombre));
+          const info = esNov ? novPorDepto.get(normDepto(nombre)) : datosPorDepto.get(normDepto(nombre));
           if (!info) return null;
           const c = centroide(f, proj);
           if (!c) return null;
@@ -2234,18 +2245,35 @@ function MapaColombia({ porDepartamento }: any) {
       <div style={{ flex: 1, minWidth: 220, fontSize: 13 }}>
         {hover ? (
           <div style={{ background: "#0f172a", borderRadius: 8, padding: 14 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{hover.departamento}</div>
-            <div style={{ marginBottom: 4 }}>📦 Envíos: <strong>{hover.total}</strong></div>
-            <div style={{ color: "#86efac" }}>✅ Entregado: {hover.pctEntregado}%</div>
-            <div style={{ color: "#fdba74" }}>🔁 Devolución: {hover.pctDevolucion}%</div>
-            <div style={{ color: "#fca5a5" }}>🚫 Cancelado: {hover.pctCancelado}%</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>
+              {(hover.base || hover.nov)?.departamento}
+            </div>
+            {hover.base && (
+              <>
+                <div style={{ marginBottom: 4 }}>📦 Envíos: <strong>{hover.base.total}</strong></div>
+                <div style={{ color: "#86efac" }}>✅ Entregado: {hover.base.pctEntregado}%</div>
+                <div style={{ color: "#fdba74" }}>🔁 Devolución: {hover.base.pctDevolucion}%</div>
+                <div style={{ color: "#fca5a5" }}>🚫 Cancelado: {hover.base.pctCancelado}%</div>
+              </>
+            )}
+            {hover.nov && (
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #334155" }}>
+                <div style={{ color: "#fde047" }}>⚠️ Novedades: <strong>{hover.nov.total}</strong></div>
+                <div style={{ color: "#fca5a5" }}>Sin resolver: {hover.nov.sinResolver}</div>
+                <div style={{ color: "#86efac" }}>Resueltas: {hover.nov.resueltas}</div>
+              </div>
+            )}
           </div>
         ) : (
           <p style={{ color: "#64748b" }}>Pasá el mouse sobre un departamento para ver sus datos.</p>
         )}
         <p style={{ color: "#64748b", fontSize: 12, marginTop: 12 }}>
-                    La intensidad del azul indica el volumen de envíos. Los departamentos sin envíos quedan en gris.
+          {esNov
+            ? "La intensidad del amarillo indica la cantidad de novedades."
+            : "La intensidad del azul indica el volumen de envíos."}{" "}
+          Los departamentos sin datos quedan en gris.
         </p>
+      </div>
       </div>
     </div>
   );
