@@ -11,6 +11,7 @@ async function getFreshToken(): Promise<string> {
 }
 
 type Tab =
+  | "general"
   | "seguimiento"
   | "estatus"
   | "transportadoras"
@@ -66,7 +67,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
-  const [tab, setTab] = useState<Tab>("seguimiento");
+  const [tab, setTab] = useState<Tab>("general");
   const [token, setToken] = useState<string>("");
   
 const [mes, setMes] = useState<string>("__todos__");
@@ -158,7 +159,8 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
       };
     });
   }
-  const tabs: { key: Tab; label: string }[] = [
+    const tabs: { key: Tab; label: string }[] = [
+    { key: "general", label: "General" },
     { key: "seguimiento", label: "Seguimiento" },
     { key: "estatus", label: "Estatus" },
     { key: "transportadoras", label: "Transportadoras" },
@@ -222,6 +224,7 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
           onNota={actualizarNota}
         />
       )}
+          {tab === "general" && <GeneralTab data={data} />}
       {tab === "estatus" && <EstatusTab data={data} />}
       {tab === "transportadoras" && <TransportadorasTab data={data} />}
       {tab === "dinero" && <DineroTab data={data} />}
@@ -1736,6 +1739,206 @@ function GrupoDiaPendiente({ dia, token, onMarcar, onNota }: any) {
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+const COLORES_TORTA = ["#3b82f6", "#22c55e", "#f97316", "#a855f7", "#eab308", "#ef4444", "#14b8a6", "#ec4899"];
+
+function GeneralTab({ data }: any) {
+  const b = data.buckets;
+  const d = data.dinero;
+  const dias: any[] = data.diasPendientes || [];
+
+  // Mes a mostrar en el calendario: el más reciente que tenga días
+  const mesesDeDias = Array.from(new Set(dias.map((x: any) => x.fecha.slice(0, 7)))).sort() as string[];
+  const [mesCal, setMesCal] = useState<string>(mesesDeDias[mesesDeDias.length - 1] || "");
+
+  return (
+    <div>
+      <h3 style={h3}>Resumen general</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 32 }}>
+        <StatCard label="✅ Entregado" count={b.entregado.count} pctVal={b.entregado.pct} color="#22c55e" />
+        <StatCard label="🚚 En tránsito" count={b.en_transito.count} pctVal={b.en_transito.pct} color="#3b82f6" />
+        <StatCard label="🔁 Devolución" count={b.devolucion.count} pctVal={b.devolucion.pct} color="#f97316" />
+        <StatCard label="🚫 Cancelado" count={b.cancelado.count} pctVal={b.cancelado.pct} color="#ef4444" />
+      </div>
+
+      <h3 style={h3}>Dinero</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 32 }}>
+        <MoneyCard label="💰 Ganancia realizada" value={d.entregado.suma} count={d.entregado.cantidad} color="#22c55e" />
+        <MoneyCard label="🚚 Ganancia en camino" value={d.en_transito.suma} count={d.en_transito.cantidad} color="#3b82f6" />
+        <MoneyCard label="📦 Próximo a entregar" value={d.proximo_a_entregar.suma} count={d.proximo_a_entregar.cantidad} color="#a855f7" />
+        <MoneyCard label="🔁 Ajuste devoluciones" value={d.devolucion.suma} count={d.devolucion.cantidad} color="#f97316" />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 24, marginBottom: 32 }}>
+        <div>
+          <h3 style={h3}>Top 10 ciudades</h3>
+          <Table
+            headers={["Ciudad", "Total", "Entregado", "Devolución", "Cancelado"]}
+            rows={data.porCiudad.slice(0, 10).map((c: any) => [
+              c.ciudad,
+              c.total,
+              pctCell(c.entregado, c.total),
+              pctCell(c.devolucion, c.total),
+              pctCell(c.cancelado, c.total),
+            ])}
+          />
+        </div>
+        <div>
+          <h3 style={h3}>Transportadoras</h3>
+          <TortaTransportadoras transportadoras={data.transportadoras} />
+        </div>
+      </div>
+
+      <h3 style={h3}>Por departamento</h3>
+      <div style={{ marginBottom: 32 }}>
+        <Table
+          headers={["Departamento", "Envíos", "% Entregado", "% Devolución", "% Cancelado"]}
+          rows={(data.porDepartamento || []).slice(0, 20).map((x: any) => [
+            x.departamento,
+            x.total,
+            `${x.pctEntregado}%`,
+            `${x.pctDevolucion}%`,
+            `${x.pctCancelado}%`,
+          ])}
+        />
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 12px" }}>
+        <h3 style={{ ...h3, margin: 0 }}>Calendario de cierre</h3>
+        <select value={mesCal} onChange={(e) => setMesCal(e.target.value)} style={selectStyle}>
+          {mesesDeDias.map((m) => (
+            <option key={m} value={m}>
+              {nombreMes(m)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <CalendarioCierre dias={dias} mes={mesCal} />
+    </div>
+  );
+}
+
+function TortaTransportadoras({ transportadoras }: any) {
+  const datos = (transportadoras || []).slice(0, 8).map((t: any) => ({
+    nombre: t.transportadora,
+    valor: t.enviados,
+  }));
+  const total = datos.reduce((s: number, x: any) => s + x.valor, 0);
+  if (!total) return <p style={{ color: "#64748b", fontSize: 13 }}>Sin datos.</p>;
+
+  let anguloAcum = 0;
+  const radio = 90;
+  const cx = 100;
+  const cy = 100;
+
+  const paths = datos.map((x: any, i: number) => {
+    const porcion = x.valor / total;
+    const a0 = anguloAcum;
+    const a1 = anguloAcum + porcion * 2 * Math.PI;
+    anguloAcum = a1;
+    const x0 = cx + radio * Math.cos(a0 - Math.PI / 2);
+    const y0 = cy + radio * Math.sin(a0 - Math.PI / 2);
+    const x1 = cx + radio * Math.cos(a1 - Math.PI / 2);
+    const y1 = cy + radio * Math.sin(a1 - Math.PI / 2);
+    const largo = porcion > 0.5 ? 1 : 0;
+    return {
+      d: `M ${cx} ${cy} L ${x0} ${y0} A ${radio} ${radio} 0 ${largo} 1 ${x1} ${y1} Z`,
+      color: COLORES_TORTA[i % COLORES_TORTA.length],
+      nombre: x.nombre,
+      valor: x.valor,
+      pct: Math.round(porcion * 1000) / 10,
+    };
+  });
+
+  return (
+    <div style={{ background: "#1e293b", borderRadius: 10, padding: 16, display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
+      <svg viewBox="0 0 200 200" style={{ width: 200, height: 200, flexShrink: 0 }}>
+        {paths.map((p: any, i: number) => (
+          <path key={i} d={p.d} fill={p.color} stroke="#1e293b" strokeWidth="1" />
+        ))}
+      </svg>
+      <div style={{ fontSize: 13, flex: 1, minWidth: 160 }}>
+        {paths.map((p: any, i: number) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <span style={{ width: 12, height: 12, background: p.color, borderRadius: 3, flexShrink: 0 }} />
+            <span style={{ flex: 1 }}>{p.nombre}</span>
+            <span style={{ color: "#94a3b8" }}>
+              {p.valor} ({p.pct}%)
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CalendarioCierre({ dias, mes }: { dias: any[]; mes: string }) {
+  if (!mes) return <p style={{ color: "#64748b", fontSize: 13 }}>Sin datos.</p>;
+
+  const porFecha = new Map<string, any>();
+  for (const d of dias) porFecha.set(d.fecha, d);
+
+  const [anio, mesNum] = mes.split("-").map(Number);
+  const primerDia = new Date(anio, mesNum - 1, 1);
+  const diasEnMes = new Date(anio, mesNum, 0).getDate();
+  const offset = (primerDia.getDay() + 6) % 7; // lunes = 0
+
+  const celdas: (string | null)[] = [];
+  for (let i = 0; i < offset; i++) celdas.push(null);
+  for (let dd = 1; dd <= diasEnMes; dd++) {
+    celdas.push(`${mes}-${String(dd).padStart(2, "0")}`);
+  }
+
+  return (
+    <div style={{ background: "#1e293b", borderRadius: 10, padding: 16, marginBottom: 32 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
+        {["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"].map((d) => (
+          <div key={d} style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", fontWeight: 600, paddingBottom: 4 }}>
+            {d}
+          </div>
+        ))}
+        {celdas.map((fecha, i) => {
+          if (!fecha) return <div key={`v${i}`} />;
+          const info = porFecha.get(fecha);
+          const numero = Number(fecha.slice(-2));
+          if (!info) {
+            return (
+              <div key={fecha} style={{ background: "#0f172a", borderRadius: 6, padding: 8, minHeight: 62, color: "#475569", fontSize: 12 }}>
+                {numero}
+              </div>
+            );
+          }
+          const cerrado = info.cerrado;
+          return (
+            <div
+              key={fecha}
+              style={{
+                background: cerrado ? "rgba(34, 197, 94, 0.18)" : "rgba(59, 130, 246, 0.18)",
+                border: `1px solid ${cerrado ? "rgba(34,197,94,0.5)" : "rgba(59,130,246,0.5)"}`,
+                borderRadius: 6,
+                padding: 8,
+                minHeight: 62,
+              }}
+            >
+              <div style={{ fontSize: 12, fontWeight: 700 }}>{numero}</div>
+              {cerrado ? (
+                <div style={{ fontSize: 11, color: "#86efac", marginTop: 2 }}>✓ Cerrado</div>
+              ) : (
+                <div style={{ fontSize: 11, color: "#93c5fd", marginTop: 2 }}>
+                  {info.cantidadAbiertas} abiertos
+                </div>
+              )}
+              <div style={{ fontSize: 10, color: "#64748b" }}>{info.totalDia} total</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", gap: 16, marginTop: 12, fontSize: 12, color: "#94a3b8" }}>
+        <span>🟩 Día cerrado</span>
+        <span>🟦 Día con pedidos abiertos</span>
       </div>
     </div>
   );
