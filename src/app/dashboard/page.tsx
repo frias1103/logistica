@@ -2101,6 +2101,24 @@ function normDepto(s: string) {
   return n;
 }
 
+// Calcula el centro aproximado de un departamento, para ubicar su etiqueta
+function centroide(f: any, proj: (lon: number, lat: number) => [number, number]): [number, number] | null {
+  const g = f.geometry;
+  if (!g) return null;
+  let anillos: any[] = [];
+  if (g.type === "Polygon") anillos = g.coordinates;
+  else if (g.type === "MultiPolygon") anillos = g.coordinates.flat();
+  if (anillos.length === 0) return null;
+  // Usamos el anillo más grande (el cuerpo principal, ignora islas chicas)
+  const principal = anillos.reduce((a: any, b: any) => (b.length > a.length ? b : a), anillos[0]);
+  let sx = 0, sy = 0;
+  for (const pt of principal) {
+    sx += pt[0];
+    sy += pt[1];
+  }
+  return proj(sx / principal.length, sy / principal.length);
+}
+
 function MapaColombia({ porDepartamento }: any) {
   const [geo, setGeo] = useState<any>(null);
   const [errorGeo, setErrorGeo] = useState<string | null>(null);
@@ -2212,24 +2230,7 @@ function MapaColombia({ porDepartamento }: any) {
             </g>
           );
         })}
-      </svg>
-      // Calcula el centro aproximado de un departamento, para ubicar su etiqueta
-function centroide(f: any, proj: (lon: number, lat: number) => [number, number]): [number, number] | null {
-  const g = f.geometry;
-  if (!g) return null;
-  let anillos: any[] = [];
-  if (g.type === "Polygon") anillos = g.coordinates;
-  else if (g.type === "MultiPolygon") anillos = g.coordinates.flat();
-  if (anillos.length === 0) return null;
-  // Usamos el anillo más grande (el cuerpo principal, ignora islas chicas)
-  const principal = anillos.reduce((a: any, b: any) => (b.length > a.length ? b : a), anillos[0]);
-  let sx = 0, sy = 0;
-  for (const pt of principal) {
-    sx += pt[0];
-    sy += pt[1];
-  }
-  return proj(sx / principal.length, sy / principal.length);
-}
+       </svg>
       <div style={{ flex: 1, minWidth: 220, fontSize: 13 }}>
         {hover ? (
           <div style={{ background: "#0f172a", borderRadius: 8, padding: 14 }}>
