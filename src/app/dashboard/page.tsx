@@ -1745,6 +1745,17 @@ function GrupoDiaPendiente({ dia, token, onMarcar, onNota }: any) {
 }
 const COLORES_TORTA = ["#3b82f6", "#22c55e", "#f97316", "#a855f7", "#eab308", "#ef4444", "#14b8a6", "#ec4899"];
 
+const COLOR_TRANSPORTADORA: Record<string, string> = {
+  "ENVIA": "#ef4444",
+  "COORDINADORA": "#3b82f6",
+  "TCC": "#f97316",
+  "VELOCES": "#ec4899",
+  "INTERRAPIDISIMO": "#22c55e",
+  "JAMV-DRIVE": "#a855f7",
+};
+function colorTransportadora(nombre: string, i: number) {
+  return COLOR_TRANSPORTADORA[(nombre || "").trim().toUpperCase()] || COLORES_TORTA[i % COLORES_TORTA.length];
+}
 function GeneralTab({ data }: any) {
   const b = data.buckets;
   const d = data.dinero;
@@ -1792,11 +1803,21 @@ function GeneralTab({ data }: any) {
         </div>
       </div>
 
+        <h3 style={h3}>Novedades</h3>
+      <Noticias noticias={data.noticias || []} diasCerrados={data.diasCerrados || []} />
+
+      <h3 style={h3}>Desempeño por transportadora</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, marginBottom: 32 }}>
+        {(data.transportadoras || []).map((t: any, i: number) => (
+          <TortaEstadoTransportadora key={t.transportadora} t={t} idx={i} />
+        ))}
+      </div>
+
       <h3 style={h3}>Por departamento</h3>
       <div style={{ marginBottom: 32 }}>
         <Table
           headers={["Departamento", "Envíos", "% Entregado", "% Devolución", "% Cancelado"]}
-          rows={(data.porDepartamento || []).slice(0, 20).map((x: any) => [
+                rows={(data.porDepartamento || []).map((x: any) => [
             x.departamento,
             x.total,
             `${x.pctEntregado}%`,
@@ -1846,7 +1867,7 @@ function TortaTransportadoras({ transportadoras }: any) {
     const largo = porcion > 0.5 ? 1 : 0;
     return {
       d: `M ${cx} ${cy} L ${x0} ${y0} A ${radio} ${radio} 0 ${largo} 1 ${x1} ${y1} Z`,
-      color: COLORES_TORTA[i % COLORES_TORTA.length],
+           color: colorTransportadora(x.nombre, i),
       nombre: x.nombre,
       valor: x.valor,
       pct: Math.round(porcion * 1000) / 10,
@@ -1939,6 +1960,105 @@ function CalendarioCierre({ dias, mes }: { dias: any[]; mes: string }) {
       <div style={{ display: "flex", gap: 16, marginTop: 12, fontSize: 12, color: "#94a3b8" }}>
         <span>🟩 Día cerrado</span>
         <span>🟦 Día con pedidos abiertos</span>
+      </div>
+    </div>
+  );
+}
+function Noticias({ noticias, diasCerrados }: any) {
+  if (noticias.length === 0 && diasCerrados.length === 0) {
+    return <p style={{ color: "#64748b", fontSize: 13, marginBottom: 32 }}>Sin novedades para mostrar.</p>;
+  }
+  return (
+    <div style={{ marginBottom: 32, display: "grid", gap: 8 }}>
+      {diasCerrados.map((d: any) => (
+        <div
+          key={d.fecha}
+          style={{
+            background: "rgba(34, 197, 94, 0.12)",
+            borderLeft: "4px solid #22c55e",
+            borderRadius: 8,
+            padding: "10px 14px",
+            fontSize: 13,
+          }}
+        >
+          ✅ <strong>Día cerrado:</strong> {formatFecha(d.fecha)} — {d.totalDia} pedidos completados
+        </div>
+      ))}
+      {noticias.map((n: any, i: number) => (
+        <div
+          key={i}
+          style={{
+            background: n.tipo === "bueno" ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)",
+            borderLeft: `4px solid ${n.tipo === "bueno" ? "#22c55e" : "#ef4444"}`,
+            borderRadius: 8,
+            padding: "10px 14px",
+            fontSize: 13,
+          }}
+        >
+          {n.tipo === "bueno" ? "📉" : "📈"} <strong>{n.categoria}:</strong> {n.texto}{" "}
+          <span style={{ color: "#94a3b8" }}>({n.volumen} pedidos en los últimos 20 días)</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TortaEstadoTransportadora({ t, idx }: any) {
+  const datos = [
+    { nombre: "Entregado", valor: t.entregados, color: "#22c55e" },
+    { nombre: "En tránsito", valor: t.enTransito, color: "#3b82f6" },
+    { nombre: "Devolución", valor: t.devueltos, color: "#f97316" },
+  ].filter((x) => x.valor > 0);
+  const total = datos.reduce((s, x) => s + x.valor, 0);
+  if (!total) return null;
+
+  let ang = 0;
+  const r = 70, cx = 80, cy = 80;
+  const paths = datos.map((x) => {
+    const porcion = x.valor / total;
+    const a0 = ang;
+    const a1 = ang + porcion * 2 * Math.PI;
+    ang = a1;
+    const x0 = cx + r * Math.cos(a0 - Math.PI / 2);
+    const y0 = cy + r * Math.sin(a0 - Math.PI / 2);
+    const x1 = cx + r * Math.cos(a1 - Math.PI / 2);
+    const y1 = cy + r * Math.sin(a1 - Math.PI / 2);
+    const largo = porcion > 0.5 ? 1 : 0;
+    return {
+      d: `M ${cx} ${cy} L ${x0} ${y0} A ${r} ${r} 0 ${largo} 1 ${x1} ${y1} Z`,
+      color: x.color,
+      nombre: x.nombre,
+      valor: x.valor,
+      pct: Math.round(porcion * 1000) / 10,
+    };
+  });
+
+  return (
+    <div
+      style={{
+        background: "#1e293b",
+        borderRadius: 10,
+        padding: 16,
+        borderTop: `4px solid ${colorTransportadora(t.transportadora, idx)}`,
+      }}
+    >
+      <div style={{ fontWeight: 700, marginBottom: 4 }}>{t.transportadora}</div>
+      <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>{t.enviados} enviados</div>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <svg viewBox="0 0 160 160" style={{ width: 140, height: 140, flexShrink: 0 }}>
+          {paths.map((p, i) => (
+            <path key={i} d={p.d} fill={p.color} stroke="#1e293b" strokeWidth="1" />
+          ))}
+        </svg>
+        <div style={{ fontSize: 12, flex: 1, minWidth: 120 }}>
+          {paths.map((p, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+              <span style={{ width: 10, height: 10, background: p.color, borderRadius: 2, flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>{p.nombre}</span>
+              <span style={{ color: "#94a3b8" }}>{p.pct}%</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
