@@ -17,7 +17,7 @@ function bucketFor(estatusRaw: string): "entregado" | "devolucion" | "cancelado"
   return "en_transito";
 }
 
-// Base para el % de devolución: solo pedidos que salieron con guía
+// Base para el % de devolución y de entregado: solo pedidos que salieron con guía
 // (todo menos cancelado, rechazado, pendiente, pendiente confirmación y guía anulada)
 function enviadosDe(x: { entregado: number; devolucion: number; en_transito: number }) {
   return x.entregado + x.devolucion + x.en_transito;
@@ -235,7 +235,7 @@ const ciudadMap = new Map<string, { entregado: number; devolucion: number; cance
   }
 
   const totalActivo = total - huerfanas - excluidosPorTag;
-  // Pedidos que salieron con guía: base del % de devolución
+  // Pedidos que salieron con guía: base del % de devolución y de entregado
   const totalEnviados = enviadosDe(buckets);
 
   const porEstatus = Array.from(estatusCounts.entries())
@@ -243,7 +243,7 @@ const ciudadMap = new Map<string, { entregado: number; devolucion: number; cance
     .sort((a, b) => b.count - a.count);
 
   const bucketsResumen = {
-    entregado: { count: buckets.entregado, pct: pct(buckets.entregado, totalActivo) },
+    entregado: { count: buckets.entregado, pct: pct(buckets.entregado, totalEnviados) },
     devolucion: { count: buckets.devolucion, pct: pct(buckets.devolucion, totalEnviados) },
     cancelado: { count: buckets.cancelado, pct: pct(buckets.cancelado, totalActivo) },
     en_transito: { count: buckets.en_transito, pct: pct(buckets.en_transito, totalActivo) },
@@ -272,7 +272,7 @@ const ciudadMap = new Map<string, { entregado: number; devolucion: number; cance
       ...d,
       pctDevolucion: pct(d.devolucion, enviadosDe(d)),
       pctCancelado: pct(d.cancelado, d.total),
-      pctEntregado: pct(d.entregado, d.total),
+      pctEntregado: pct(d.entregado, enviadosDe(d)),
     }))
     .sort((a, b) => b.total - a.total);
   // =========================================================
