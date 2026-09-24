@@ -46,7 +46,7 @@ function pctCell(count: number, total: number) {
   );
 }
 
-// Base del % de devolución: solo pedidos que salieron con guía
+// Base del % de devolución y de cancelado: solo pedidos que salieron con guía
 // (entregado + devolución + en tránsito; sin cancelado, rechazado, pendientes ni guía anulada)
 function conGuia(x: any) {
   return (x.entregado || 0) + (x.devolucion || 0) + (x.en_transito ?? x.enTransito ?? 0);
@@ -674,7 +674,7 @@ function EstatusTab({ data }: any) {
           c.ciudad,
           pctCell(c.entregado, c.total),
           pctCell(c.devolucion, conGuia(c)),
-          pctCell(c.cancelado, c.total),
+          pctCell(c.cancelado, conGuia(c)),
           pctCell(c.en_transito, c.total),
           c.total,
         ])}
@@ -881,7 +881,7 @@ function ProductoTab({ data }: any) {
           p.producto,
           pctCell(p.entregado, p.total),
           pctCell(p.devolucion, conGuia(p)),
-          pctCell(p.cancelado, p.total),
+          pctCell(p.cancelado, conGuia(p)),
           pctCell(p.en_transito, p.total),
           p.total,
         ])}
@@ -936,7 +936,7 @@ function ProductoTab({ data }: any) {
                           <td style={td}>{c.ciudad}</td>
                           <td style={td}>{pctCell(c.entregado, c.total)}</td>
                           <td style={td}>{pctCell(c.devolucion, conGuia(c))}</td>
-                          <td style={td}>{pctCell(c.cancelado, c.total)}</td>
+                          <td style={td}>{pctCell(c.cancelado, conGuia(c))}</td>
                           <td style={td}>{pctCell(c.en_transito, c.total)}</td>
                           <td style={td}>{c.total}</td>
                           <td style={td}>
@@ -1942,7 +1942,7 @@ function GeneralTab({ data }: any) {
               c.total,
               pctCell(c.entregado, c.total),
               pctCell(c.devolucion, conGuia(c)),
-              pctCell(c.cancelado, c.total),
+              pctCell(c.cancelado, conGuia(c)),
             ])}
           />
         </div>

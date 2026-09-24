@@ -17,7 +17,7 @@ function bucketFor(estatusRaw: string): "entregado" | "devolucion" | "cancelado"
   return "en_transito";
 }
 
-// Base para el % de devolución: solo pedidos que salieron con guía
+// Base para el % de devolución y de cancelado: solo pedidos que salieron con guía
 // (todo menos cancelado, rechazado, pendiente, pendiente confirmación y guía anulada)
 function enviadosDe(x: { entregado: number; devolucion: number; en_transito: number }) {
   return x.entregado + x.devolucion + x.en_transito;
@@ -235,7 +235,7 @@ const ciudadMap = new Map<string, { entregado: number; devolucion: number; cance
   }
 
   const totalActivo = total - huerfanas - excluidosPorTag;
-  // Pedidos que salieron con guía: base del % de devolución
+  // Pedidos que salieron con guía: base del % de devolución y de cancelado
   const totalEnviados = enviadosDe(buckets);
 
   const porEstatus = Array.from(estatusCounts.entries())
@@ -245,7 +245,7 @@ const ciudadMap = new Map<string, { entregado: number; devolucion: number; cance
   const bucketsResumen = {
     entregado: { count: buckets.entregado, pct: pct(buckets.entregado, totalActivo) },
     devolucion: { count: buckets.devolucion, pct: pct(buckets.devolucion, totalEnviados) },
-    cancelado: { count: buckets.cancelado, pct: pct(buckets.cancelado, totalActivo) },
+    cancelado: { count: buckets.cancelado, pct: pct(buckets.cancelado, totalEnviados) },
     en_transito: { count: buckets.en_transito, pct: pct(buckets.en_transito, totalActivo) },
     otros: { count: buckets.otros, pct: pct(buckets.otros, totalActivo) },
   };
@@ -271,7 +271,7 @@ const ciudadMap = new Map<string, { entregado: number; devolucion: number; cance
       departamento,
       ...d,
       pctDevolucion: pct(d.devolucion, enviadosDe(d)),
-      pctCancelado: pct(d.cancelado, d.total),
+      pctCancelado: pct(d.cancelado, enviadosDe(d)),
       pctEntregado: pct(d.entregado, d.total),
     }))
     .sort((a, b) => b.total - a.total);
@@ -803,9 +803,10 @@ const seguimiento = {
       const t = String(o.transportadora).trim();
       if (!ciudadTransp.has(ciudad)) ciudadTransp.set(ciudad, new Map());
       const mapaT = ciudadTransp.get(ciudad)!;
-      if (!mapaT.has(t)) mapaT.set(t, { total: 0, dev: 0, can: 0 });
+      if (!mapaT.has(t)) mapaT.set(t, { total: 0, env: 0, dev: 0, can: 0 });
       const tt = mapaT.get(t)!;
       tt.total++;
+      if (conGuia) tt.env++;
       if (b === "devolucion") tt.dev++;
       if (b === "cancelado") tt.can++;
     }
@@ -819,8 +820,8 @@ const seguimiento = {
 
     const devRec = pct(c.recDev, c.recEnv);
     const devAnt = pct(c.antDev, c.antEnv);
-    const canRec = pct(c.recCan, c.recTotal);
-    const canAnt = pct(c.antCan, c.antTotal);
+    const canRec = pct(c.recCan, c.recEnv);
+    const canAnt = pct(c.antCan, c.antEnv);
     const diffDev = Math.round((devRec - devAnt) * 10) / 10;
     const diffCan = Math.round((canRec - canAnt) * 10) / 10;
 
@@ -853,9 +854,9 @@ const seguimiento = {
       .map(([nombre, v]) => ({
         nombre,
         total: v.total,
-        malo: pct(v.dev + v.can, v.total),
-        dev: pct(v.dev, v.total),
-        can: pct(v.can, v.total),
+        malo: pct(v.dev + v.can, v.env),
+        dev: pct(v.dev, v.env),
+        can: pct(v.can, v.env),
       }))
       .sort((a, b) => a.malo - b.malo);
 
