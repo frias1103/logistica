@@ -46,7 +46,7 @@ function pctCell(count: number, total: number) {
   );
 }
 
-// Base del % de devolución: solo pedidos que salieron con guía
+// Base del % de devolución y de entregado: solo pedidos que salieron con guía
 // (entregado + devolución + en tránsito; sin cancelado, rechazado, pendientes ni guía anulada)
 function conGuia(x: any) {
   return (x.entregado || 0) + (x.devolucion || 0) + (x.en_transito ?? x.enTransito ?? 0);
@@ -672,7 +672,7 @@ function EstatusTab({ data }: any) {
         headers={["Ciudad", "Entregado", "Devolución", "Cancelado", "En tránsito", "Total"]}
         rows={ciudades.map((c: any) => [
           c.ciudad,
-          pctCell(c.entregado, c.total),
+          pctCell(c.entregado, conGuia(c)),
           pctCell(c.devolucion, conGuia(c)),
           pctCell(c.cancelado, c.total),
           pctCell(c.en_transito, c.total),
@@ -879,7 +879,7 @@ function ProductoTab({ data }: any) {
         headers={["Producto", "Entregado", "Devolución", "Cancelado", "En tránsito", "Total"]}
         rows={productos.map((p: any) => [
           p.producto,
-          pctCell(p.entregado, p.total),
+          pctCell(p.entregado, conGuia(p)),
           pctCell(p.devolucion, conGuia(p)),
           pctCell(p.cancelado, p.total),
           pctCell(p.en_transito, p.total),
@@ -934,7 +934,7 @@ function ProductoTab({ data }: any) {
                       <Fragment key={key}>
                         <tr key={key} style={{ borderTop: "1px solid #334155" }}>
                           <td style={td}>{c.ciudad}</td>
-                          <td style={td}>{pctCell(c.entregado, c.total)}</td>
+                          <td style={td}>{pctCell(c.entregado, conGuia(c))}</td>
                           <td style={td}>{pctCell(c.devolucion, conGuia(c))}</td>
                           <td style={td}>{pctCell(c.cancelado, c.total)}</td>
                           <td style={td}>{pctCell(c.en_transito, c.total)}</td>
@@ -1940,7 +1940,7 @@ function GeneralTab({ data }: any) {
             rows={data.porCiudad.slice(0, 10).map((c: any) => [
               c.ciudad,
               c.total,
-              pctCell(c.entregado, c.total),
+              pctCell(c.entregado, conGuia(c)),
               pctCell(c.devolucion, conGuia(c)),
               pctCell(c.cancelado, c.total),
             ])}
