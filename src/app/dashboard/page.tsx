@@ -46,6 +46,12 @@ function pctCell(count: number, total: number) {
   );
 }
 
+// Base del % de devolución: solo pedidos que salieron con guía
+// (entregado + devolución + en tránsito; sin cancelado, rechazado, pendientes ni guía anulada)
+function conGuia(x: any) {
+  return (x.entregado || 0) + (x.devolucion || 0) + (x.en_transito ?? x.enTransito ?? 0);
+}
+
 function colorForDias(d: number) {
   if (d <= 4) return "rgba(34, 197, 94, 0.15)";
   if (d <= 9) return "rgba(234, 179, 8, 0.15)";
@@ -199,6 +205,13 @@ function actualizarFechaReportado(id: string, fecha: string | null) {
             {" "}
             ({data.totalActivo} activas — se excluyen {data.huerfanas} que dejaron de
             aparecer en los reportes sin llegar a un estatus final)
+          </span>
+        )}
+        {data.excluidosPorTag > 0 && (
+          <span>
+            {" "}
+            · Además se excluyen {data.excluidosPorTag} cancelados con tag de pedido
+            duplicado u orden para Bogotá/Soacha (se ven en la pestaña Tags)
           </span>
         )}
         .
@@ -660,7 +673,7 @@ function EstatusTab({ data }: any) {
         rows={ciudades.map((c: any) => [
           c.ciudad,
           pctCell(c.entregado, c.total),
-          pctCell(c.devolucion, c.total),
+          pctCell(c.devolucion, conGuia(c)),
           pctCell(c.cancelado, c.total),
           pctCell(c.en_transito, c.total),
           c.total,
@@ -867,7 +880,7 @@ function ProductoTab({ data }: any) {
         rows={productos.map((p: any) => [
           p.producto,
           pctCell(p.entregado, p.total),
-          pctCell(p.devolucion, p.total),
+          pctCell(p.devolucion, conGuia(p)),
           pctCell(p.cancelado, p.total),
           pctCell(p.en_transito, p.total),
           p.total,
@@ -922,7 +935,7 @@ function ProductoTab({ data }: any) {
                         <tr key={key} style={{ borderTop: "1px solid #334155" }}>
                           <td style={td}>{c.ciudad}</td>
                           <td style={td}>{pctCell(c.entregado, c.total)}</td>
-                          <td style={td}>{pctCell(c.devolucion, c.total)}</td>
+                          <td style={td}>{pctCell(c.devolucion, conGuia(c))}</td>
                           <td style={td}>{pctCell(c.cancelado, c.total)}</td>
                           <td style={td}>{pctCell(c.en_transito, c.total)}</td>
                           <td style={td}>{c.total}</td>
@@ -1199,16 +1212,126 @@ function ProductividadTab({ data }: any) {
   );
 }
 
+function normalizarTexto(s: string) {
+  return (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+}
+
+const CIUDADES_POR_PAGINA = 50;
+const MAX_TAGS_BUSQUEDA = 20;
+
+// Chips con cuántos pedidos del tag hay en cada estatus
+function EstatusChips({ porEstatus }: { porEstatus: { estatus: string; count: number }[] }) {
+  if (!porEstatus || porEstatus.length === 0) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+      {porEstatus.map((e) => (
+        <span
+          key={e.estatus}
+          style={{
+            background: "#334155",
+            color: "#e2e8f0",
+            fontSize: 12,
+            padding: "3px 9px",
+            borderRadius: 999,
+          }}
+        >
+          {e.estatus}: <b>{e.count}</b>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// Tabla de ciudades paginada de a 50
+function CiudadesPaginadas({ filas, tag }: { filas: any[]; tag: string }) {
+  const [pagina, setPagina] = useState(0);
+  const totalPaginas = Math.max(1, Math.ceil(filas.length / CIUDADES_POR_PAGINA));
+  const paginaActual = Math.min(pagina, totalPaginas - 1);
+  const visibles = filas.slice(
+    paginaActual * CIUDADES_POR_PAGINA,
+    (paginaActual + 1) * CIUDADES_POR_PAGINA
+  );
+  return (
+    <div>
+      <h3 style={h3}>Por ciudad — {tag}</h3>
+      <Table
+        headers={["Ciudad", "Entregado", "Devolución", "En tránsito", "Total"]}
+        rows={visibles.map((c: any) => [
+          c.ciudad,
+          pctCell(c.entregado, c.total),
+          pctCell(c.devolucion, c.total),
+          pctCell(c.enTransito, c.total),
+          c.total,
+        ])}
+      />
+      {totalPaginas > 1 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: -20, marginBottom: 24 }}>
+          <button
+            onClick={() => setPagina(Math.max(0, paginaActual - 1))}
+            disabled={paginaActual === 0}
+            style={{ ...selectStyle, cursor: paginaActual === 0 ? "default" : "pointer", opacity: paginaActual === 0 ? 0.4 : 1 }}
+          >
+            ← Anterior
+          </button>
+          <span style={{ color: "#94a3b8", fontSize: 13 }}>
+            Página {paginaActual + 1} de {totalPaginas} · {filas.length} ciudades
+          </span>
+          <button
+            onClick={() => setPagina(Math.min(totalPaginas - 1, paginaActual + 1))}
+            disabled={paginaActual >= totalPaginas - 1}
+            style={{
+              ...selectStyle,
+              cursor: paginaActual >= totalPaginas - 1 ? "default" : "pointer",
+              opacity: paginaActual >= totalPaginas - 1 ? 0.4 : 1,
+            }}
+          >
+            Siguiente →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TagsTab({ data }: any) {
-  const todasLasCiudades = Array.from(
-    new Set(data.tagsResumen.flatMap((t: any) => t.porCiudad.map((c: any) => c.ciudad)))
-  ).sort() as string[];
+  const [busqueda, setBusqueda] = useState("");
   const [selected, setSelected] = useState<string>("__todas__");
+
+  const catalogo: any[] = data.tagsCatalogo || [];
+  const textoBuscado = normalizarTexto(busqueda);
+  const coincidencias = textoBuscado
+    ? catalogo.filter((t) => normalizarTexto(t.tag).includes(textoBuscado))
+    : [];
+  const tagsAMostrar: any[] = textoBuscado
+    ? coincidencias.slice(0, MAX_TAGS_BUSQUEDA)
+    : data.tagsResumen || [];
+
+  const todasLasCiudades = Array.from(
+    new Set(tagsAMostrar.flatMap((t: any) => t.porCiudad.map((c: any) => c.ciudad)))
+  ).sort() as string[];
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-        <span style={{ color: "#94a3b8", fontSize: 13 }}>Filtrar por ciudad:</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+        <input
+          type="text"
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          placeholder="🔎 Buscar tag (ej. oficina, bajo compromiso)…"
+          list="lista-tags"
+          style={{ ...selectStyle, minWidth: 280 }}
+        />
+        <datalist id="lista-tags">
+          {catalogo.map((t) => (
+            <option key={t.tag} value={t.tag} />
+          ))}
+        </datalist>
+        {busqueda && (
+          <button onClick={() => setBusqueda("")} style={{ ...selectStyle, cursor: "pointer" }}>
+            ✕ Limpiar
+          </button>
+        )}
+        <span style={{ color: "#94a3b8", fontSize: 13 }}>Ciudad:</span>
         <select value={selected} onChange={(e) => setSelected(e.target.value)} style={selectStyle}>
           <option value="__todas__">Todas las ciudades</option>
           {todasLasCiudades.map((c) => (
@@ -1219,7 +1342,42 @@ function TagsTab({ data }: any) {
         </select>
       </div>
 
-      {data.tagsResumen.map((t: any) => {
+      {!textoBuscado && (data.tagsExcluidos || []).length > 0 && (
+        <div style={{ marginBottom: 36 }}>
+          <h3 style={h3}>Excluidos del conteo de cancelados</h3>
+          <p style={{ color: "#64748b", fontSize: 13, marginTop: -4, marginBottom: 12 }}>
+            Los pedidos CANCELADO con estos tags no cuentan en ninguna otra pestaña. Acá se ve
+            cuántos pedidos tienen el tag y en qué estatus están.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+            {data.tagsExcluidos.map((t: any) => (
+              <div
+                key={t.tag}
+                style={{ background: "#1e293b", borderRadius: 10, padding: 16, borderLeft: "4px solid #ef4444" }}
+              >
+                <div style={{ fontSize: 13, color: "#94a3b8" }}>🏷️ {t.tag}</div>
+                <div style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>{t.totalPedidos}</div>
+                <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 10 }}>
+                  pedidos · {t.cancelados} cancelados excluidos
+                </div>
+                <EstatusChips porEstatus={t.porEstatus} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {textoBuscado && coincidencias.length === 0 && (
+        <p style={{ color: "#94a3b8" }}>No hay ningún tag que contenga “{busqueda}”.</p>
+      )}
+      {textoBuscado && coincidencias.length > MAX_TAGS_BUSQUEDA && (
+        <p style={{ color: "#94a3b8", fontSize: 13 }}>
+          Se muestran los primeros {MAX_TAGS_BUSQUEDA} de {coincidencias.length} tags que coinciden. Afiná la búsqueda
+          para ver otros.
+        </p>
+      )}
+
+      {tagsAMostrar.map((t: any) => {
         const filas =
           selected === "__todas__" ? t.porCiudad : t.porCiudad.filter((c: any) => c.ciudad === selected);
         return (
@@ -1237,27 +1395,18 @@ function TagsTab({ data }: any) {
               <div style={{ fontSize: 13, color: "#94a3b8" }}>🏷️ {t.tag}</div>
               <div style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>{t.cantidad}</div>
               <div style={{ fontSize: 13, color: "#94a3b8" }}>
-                {t.pctDelTotal}% del total de órdenes
+                enviados con guía · {t.pctDelTotal}% de los enviados · {t.totalPedidos} pedidos en total
               </div>
             </div>
-
-            <h3 style={h3}>Por ciudad — {t.tag}</h3>
-            <Table
-              headers={["Ciudad", "Entregado", "Devolución", "En tránsito", "Total"]}
-              rows={filas.map((c: any) => [
-                c.ciudad,
-                pctCell(c.entregado, c.total),
-                pctCell(c.devolucion, c.total),
-                pctCell(c.enTransito, c.total),
-                c.total,
-              ])}
-            />
+            <EstatusChips porEstatus={t.porEstatus} />
+            <CiudadesPaginadas key={`${t.tag}__${selected}`} filas={filas} tag={t.tag} />
           </div>
         );
       })}
       <p style={{ color: "#64748b", fontSize: 13 }}>
-        Solo se cuentan órdenes que sí se enviaron (se excluyen cancelado,
-        rechazado, pendiente confirmación y guía anulada).
+        La tabla por ciudad solo cuenta órdenes que sí se enviaron con guía (se excluyen cancelado,
+        rechazado, pendiente, pendiente confirmación y guía anulada). Los chips de estatus cuentan todos
+        los pedidos con el tag.
       </p>
     </div>
   );
@@ -1792,7 +1941,7 @@ function GeneralTab({ data }: any) {
               c.ciudad,
               c.total,
               pctCell(c.entregado, c.total),
-              pctCell(c.devolucion, c.total),
+              pctCell(c.devolucion, conGuia(c)),
               pctCell(c.cancelado, c.total),
             ])}
           />

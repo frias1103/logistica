@@ -17,6 +17,29 @@ function bucketFor(estatusRaw: string): "entregado" | "devolucion" | "cancelado"
   return "en_transito";
 }
 
+// Base para el % de devolución: solo pedidos que salieron con guía
+// (todo menos cancelado, rechazado, pendiente, pendiente confirmación y guía anulada)
+function enviadosDe(x: { entregado: number; devolucion: number; en_transito: number }) {
+  return x.entregado + x.devolucion + x.en_transito;
+}
+
+// Mayúsculas y sin tildes, para comparar tags sin importar cómo vengan escritos
+function normalizarTag(s: string | null | undefined) {
+  return (s || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+    .trim();
+}
+
+// La columna TAGS del Excel puede traer varios tags juntos: los separamos
+function separarTags(s: string | null | undefined): string[] {
+  return normalizarTag(s)
+    .split(/[,;|]/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
 function pct(part: number, total: number) {
   if (!total) return 0;
   return Math.round((part / total) * 1000) / 10;
@@ -159,46 +182,22 @@ orders = await fetchAll(supabase, "order_status_history", "id");
     orders = orders!.filter((o) => (o.fecha_orden || "").startsWith(mesFiltro));
   }
 
-  // Deduplicación por teléfono: si un mismo teléfono tiene varios pedidos
-  // CANCELADO, son duplicados (reintentos del mismo pedido real) — se deja
-  // solo el más nuevo. Si además tiene algún pedido en OTRO estatus, los
-  // cancelados de ese teléfono se descartan del todo (el pedido real es el
-  // que sigue vivo en otro estatus).
-  const excluidoPorDuplicado = new Set<string>();
-  {
-    const porTelefono = new Map<string, any[]>();
-    for (const o of orders!) {
-      if (esHuerfana(o)) continue; // no mezclamos con huérfanas
-      const tel = (o.telefono || "").trim();
-      if (!tel) continue;
-      if (!porTelefono.has(tel)) porTelefono.set(tel, []);
-      porTelefono.get(tel)!.push(o);
-    }
-    for (const grupo of porTelefono.values()) {
-      if (grupo.length < 2) continue;
-      const cancelados = grupo.filter(
-        (o) => (o.estatus_actual || "").trim().toUpperCase() === "CANCELADO"
-      );
-      const noCancelados = grupo.filter(
-        (o) => (o.estatus_actual || "").trim().toUpperCase() !== "CANCELADO"
-      );
-      if (cancelados.length < 2 && noCancelados.length === 0) continue;
-      if (noCancelados.length === 0) {
-        // Todos cancelados -> se queda solo el más nuevo
-        const ordenados = [...cancelados].sort((a, b) =>
-          (b.fecha_orden || "").localeCompare(a.fecha_orden || "")
-        );
-        for (const o of ordenados.slice(1)) excluidoPorDuplicado.add(o.id);
-      } else if (cancelados.length > 0) {
-        // Hay pedidos en otro estatus -> se descartan todos los cancelados
-        for (const o of cancelados) excluidoPorDuplicado.add(o.id);
-      }
-    }
-  }
-  const esDuplicado = (o: any) => excluidoPorDuplicado.has(o.id);
+  // Exclusión por TAG: los pedidos CANCELADO que tienen alguno de estos tags
+  // (pedido duplicado, envío a Bogotá, envío a Soacha) no son cancelaciones
+  // reales, así que se sacan de TODOS los conteos (igual que las huérfanas).
+  // Se siguen mostrando en la pestaña Tags, con cantidad por estatus.
+  // Se compara el tag EXACTO (en mayúsculas y sin tildes), tal como viene en
+  // la columna TAGS de Dropi, separada por comas.
+  const TAGS_EXCLUIDOS_DE_CANCELADO = ["PEDIDO DUPLICADO", "ORDEN PARA BOGOTA", "ORDEN PARA SOACHA"];
+  const tieneTagExcluido = (o: any) => {
+    const t = separarTags(o.tags);
+    return TAGS_EXCLUIDOS_DE_CANCELADO.some((x) => t.includes(x));
+  };
+  const esExcluidoPorTag = (o: any) =>
+    (o.estatus_actual || "").trim().toUpperCase() === "CANCELADO" && tieneTagExcluido(o);
 
 const ordersById = new Map(
-  orders!.filter((o) => !esHuerfana(o) && !esDuplicado(o)).map((o) => [o.id, o])
+  orders!.filter((o) => !esHuerfana(o) && !esExcluidoPorTag(o)).map((o) => [o.id, o])
 );
 
   // =========================================================
@@ -209,10 +208,15 @@ const ordersById = new Map(
   const estatusCounts = new Map<string, number>();
   const buckets = { entregado: 0, devolucion: 0, cancelado: 0, en_transito: 0, otros: 0 };
 const ciudadMap = new Map<string, { entregado: number; devolucion: number; cancelado: number; en_transito: number; otros: number; total: number }>();
+  let excluidosPorTag = 0;
   for (const o of orders!) {
-    if (esHuerfana(o) || esDuplicado(o)) {
+    if (esHuerfana(o)) {
       huerfanas++;
       continue; // no la contamos en ningún estatus: no sabemos su estado real
+    }
+    if (esExcluidoPorTag(o)) {
+      excluidosPorTag++;
+      continue; // cancelado con tag duplicado/Bogotá/Soacha: no es cancelación real
     }
 
     const estatus = (o.estatus_actual || "SIN ESTATUS").trim();
@@ -230,7 +234,9 @@ const ciudadMap = new Map<string, { entregado: number; devolucion: number; cance
     c.total++;
   }
 
-  const totalActivo = total - huerfanas;
+  const totalActivo = total - huerfanas - excluidosPorTag;
+  // Pedidos que salieron con guía: base del % de devolución
+  const totalEnviados = enviadosDe(buckets);
 
   const porEstatus = Array.from(estatusCounts.entries())
     .map(([estatus, count]) => ({ estatus, count, pct: pct(count, totalActivo) }))
@@ -238,7 +244,7 @@ const ciudadMap = new Map<string, { entregado: number; devolucion: number; cance
 
   const bucketsResumen = {
     entregado: { count: buckets.entregado, pct: pct(buckets.entregado, totalActivo) },
-    devolucion: { count: buckets.devolucion, pct: pct(buckets.devolucion, totalActivo) },
+    devolucion: { count: buckets.devolucion, pct: pct(buckets.devolucion, totalEnviados) },
     cancelado: { count: buckets.cancelado, pct: pct(buckets.cancelado, totalActivo) },
     en_transito: { count: buckets.en_transito, pct: pct(buckets.en_transito, totalActivo) },
     otros: { count: buckets.otros, pct: pct(buckets.otros, totalActivo) },
@@ -251,7 +257,7 @@ const ciudadMap = new Map<string, { entregado: number; devolucion: number; cance
   // Agrupado por departamento (para la sección General / futuro mapa)
   const deptoMap = new Map<string, any>();
   for (const o of orders!) {
-    if (esHuerfana(o) || esDuplicado(o)) continue;
+    if (esHuerfana(o) || esExcluidoPorTag(o)) continue;
     const depto = (o.departamento_destino || "SIN DEPARTAMENTO").trim();
     if (!deptoMap.has(depto)) {
       deptoMap.set(depto, { entregado: 0, devolucion: 0, cancelado: 0, en_transito: 0, otros: 0, total: 0 });
@@ -264,7 +270,7 @@ const ciudadMap = new Map<string, { entregado: number; devolucion: number; cance
     .map(([departamento, d]) => ({
       departamento,
       ...d,
-      pctDevolucion: pct(d.devolucion, d.total),
+      pctDevolucion: pct(d.devolucion, enviadosDe(d)),
       pctCancelado: pct(d.cancelado, d.total),
       pctEntregado: pct(d.entregado, d.total),
     }))
@@ -279,7 +285,7 @@ const transMap = new Map<string, { enviados: number; entregado: number; devoluci
   >();
 
 for (const o of orders!) {
-    if (esHuerfana(o) || esDuplicado(o)) continue;
+    if (esHuerfana(o) || esExcluidoPorTag(o)) continue;
     if (!o.numero_guia) continue; // solo lo que realmente se despachó
     const b = bucketFor(o.estatus_actual);
     if (b === "cancelado" || b === "otros") continue; // nunca se envió de verdad
@@ -374,7 +380,7 @@ const transportadoras = Array.from(transMap.entries())
   };
 
  for (const o of orders!) {
-    if (esHuerfana(o) || esDuplicado(o)) continue;
+    if (esHuerfana(o) || esExcluidoPorTag(o)) continue;
     const b = bucketFor(o.estatus_actual);
     if (b === "entregado") {
       dinero.entregado.suma += ganancia(o, false);
@@ -492,7 +498,7 @@ const transportadoras = Array.from(transMap.entries())
 
 const vendedorMap = new Map<string, number>();
   for (const o of orders!) {
-    if (esHuerfana(o) || esDuplicado(o)) continue;
+    if (esHuerfana(o) || esExcluidoPorTag(o)) continue;
     const v = o.vendedor && o.vendedor.trim() ? o.vendedor.trim() : "SIN VENDEDOR ASIGNADO";
     vendedorMap.set(v, (vendedorMap.get(v) || 0) + 1);
   }
@@ -533,59 +539,82 @@ const vendedorMap = new Map<string, number>();
     })
     .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
   // =========================================================
-  // 6. SEGUIMIENTO POR TAGS (ANTICIPO PAGADO, ENVIO A OFICINA)
+  // 6. TAGS
   // =========================================================
+  // Una sola pasada por todas las órdenes (menos huérfanas) juntando, para
+  // CADA tag que aparezca en los datos: cuántos pedidos lo tienen por
+  // estatus (todos los estatus) y, solo de los enviados con guía, cómo le fue
+  // por ciudad. Los cancelados excluidos por tag SÍ se cuentan acá.
   const TAGS_A_SEGUIR = ["ANTICIPO PAGADO", "ENVIO A OFICINA"];
-  const NO_ENVIADO_TAGS = ["CANCELADO", "RECHAZADO", "PENDIENTE CONFIRMACION", "GUIA_ANULADA"];
 
-  const tagsResumen = TAGS_A_SEGUIR.map((tagBuscado) => {
-const ordenesConTag = orders.filter((o) => {
-       if (esHuerfana(o) || esDuplicado(o)) return false;
-      const t = (o.tags || "").toUpperCase();
-      if (!t.includes(tagBuscado.toUpperCase())) return false;
-      const estatus = (o.estatus_actual || "").trim().toUpperCase();
-      return !NO_ENVIADO_TAGS.includes(estatus);
-    });
-
-    const cantidad = ordenesConTag.length;
-
-    const ciudadTagMap = new Map<
-      string,
-      { entregado: number; devolucion: number; en_transito: number; total: number }
-    >();
-    for (const o of ordenesConTag) {
-      const b = bucketFor(o.estatus_actual);
-      const ciudad = o.ciudad_destino || "SIN CIUDAD";
-      if (!ciudadTagMap.has(ciudad)) {
-        ciudadTagMap.set(ciudad, { entregado: 0, devolucion: 0, en_transito: 0, total: 0 });
-      }
-      const c = ciudadTagMap.get(ciudad)!;
+  type TagAcum = {
+    totalPedidos: number;
+    porEstatus: Map<string, number>;
+    ciudades: Map<string, { entregado: number; devolucion: number; en_transito: number; total: number }>;
+  };
+  const tagAcum = new Map<string, TagAcum>();
+  for (const o of orders!) {
+    if (esHuerfana(o)) continue;
+    const tagsOrden = Array.from(new Set(separarTags(o.tags)));
+    if (tagsOrden.length === 0) continue;
+    const estatus = (o.estatus_actual || "SIN ESTATUS").trim().toUpperCase();
+    const b = bucketFor(estatus);
+    const conGuia = b === "entregado" || b === "devolucion" || b === "en_transito";
+    const ciudad = o.ciudad_destino || "SIN CIUDAD";
+    for (const tag of tagsOrden) {
+      if (!tagAcum.has(tag)) tagAcum.set(tag, { totalPedidos: 0, porEstatus: new Map(), ciudades: new Map() });
+      const ta = tagAcum.get(tag)!;
+      ta.totalPedidos++;
+      ta.porEstatus.set(estatus, (ta.porEstatus.get(estatus) || 0) + 1);
+      if (!conGuia) continue;
+      if (!ta.ciudades.has(ciudad)) ta.ciudades.set(ciudad, { entregado: 0, devolucion: 0, en_transito: 0, total: 0 });
+      const c = ta.ciudades.get(ciudad)!;
       c.total++;
-      if (b === "entregado") c.entregado++;
-      else if (b === "devolucion") c.devolucion++;
-      else c.en_transito++;
+      c[b as "entregado" | "devolucion" | "en_transito"]++;
     }
+  }
 
-    const porCiudad = Array.from(ciudadTagMap.entries())
-      .map(([ciudad, c]) => ({
-        ciudad,
-        total: c.total,
-        entregado: c.entregado,
-        entregadoPct: pct(c.entregado, c.total),
-        devolucion: c.devolucion,
-        devolucionPct: pct(c.devolucion, c.total),
-        enTransito: c.en_transito,
-        enTransitoPct: pct(c.en_transito, c.total),
-      }))
-      .sort((a, b) => b.total - a.total);
-
+  const armarTag = (tag: string) => {
+    const ta = tagAcum.get(tag);
+    const porCiudad = ta
+      ? Array.from(ta.ciudades.entries())
+          .map(([ciudad, c]) => ({
+            ciudad,
+            total: c.total,
+            entregado: c.entregado,
+            devolucion: c.devolucion,
+            enTransito: c.en_transito,
+          }))
+          .sort((a, b) => b.total - a.total)
+      : [];
+    const cantidad = porCiudad.reduce((s, c) => s + c.total, 0); // enviados con guía
+    const porEstatus = ta
+      ? Array.from(ta.porEstatus.entries())
+          .map(([estatus, count]) => ({ estatus, count }))
+          .sort((a, b) => b.count - a.count)
+      : [];
     return {
-      tag: tagBuscado,
+      tag,
       cantidad,
-      pctDelTotal: pct(cantidad, total),
+      totalPedidos: ta?.totalPedidos || 0,
+      pctDelTotal: pct(cantidad, totalEnviados),
+      porEstatus,
       porCiudad,
     };
+  };
+
+  // Tags que se muestran por defecto (sin buscar nada)
+  const tagsResumen = TAGS_A_SEGUIR.map(armarTag);
+  // Tags excluidos del conteo de cancelados: solo cantidad y estatus
+  const tagsExcluidos = TAGS_EXCLUIDOS_DE_CANCELADO.map((tag) => {
+    const t = armarTag(tag);
+    const cancelados = t.porEstatus.find((e) => e.estatus === "CANCELADO")?.count || 0;
+    return { tag, totalPedidos: t.totalPedidos, cancelados, porEstatus: t.porEstatus };
   });
+  // Todos los tags que existen en los datos (para el buscador)
+  const tagsCatalogo = Array.from(tagAcum.keys())
+    .map(armarTag)
+    .sort((a, b) => b.totalPedidos - a.totalPedidos);
 
 // =========================================================
   // 7. SEGUIMIENTO DE ÓRDENES SIN MOVIMIENTO (usa fecha_estatus_desde)
@@ -608,7 +637,7 @@ const seguimientoGruposMap = new Map<string, any[]>();
   const totalPorEstatusMap = new Map<string, number>();
 
   for (const o of orders!) {
-     if (esHuerfana(o) || esDuplicado(o)) continue; // no la contamos: no sabemos su estado real 
+     if (esHuerfana(o) || esExcluidoPorTag(o)) continue; // no la contamos: no sabemos su estado real 
 
     const estatus = (o.estatus_actual || "SIN ESTATUS").trim();
     totalPorEstatusMap.set(estatus, (totalPorEstatusMap.get(estatus) || 0) + 1);
@@ -673,7 +702,7 @@ const seguimiento = {
   const estatusPorDiaMap = new Map<string, number>();
   const todosLosEstatusSet = new Set<string>();
   for (const o of orders!) {
-    if (esHuerfana(o) || esDuplicado(o)) continue;
+    if (esHuerfana(o) || esExcluidoPorTag(o)) continue;
     const estatus = (o.estatus_actual || "SIN ESTATUS").trim();
     todosLosEstatusSet.add(estatus);
     if (!o.fecha_orden) continue;
@@ -692,7 +721,7 @@ const seguimiento = {
   // =========================================================
   const diasMap = new Map<string, any[]>();
   for (const o of orders!) {
-    if (esHuerfana(o) || esDuplicado(o)) continue;
+    if (esHuerfana(o) || esExcluidoPorTag(o)) continue;
     if (!o.fecha_orden) continue;
     if (!diasMap.has(o.fecha_orden)) diasMap.set(o.fecha_orden, []);
     diasMap.get(o.fecha_orden)!.push(o);
@@ -743,7 +772,7 @@ const seguimiento = {
   const ciudadTransp = new Map<string, Map<string, any>>();
 
   for (const o of orders!) {
-    if (esHuerfana(o) || esDuplicado(o)) continue;
+    if (esHuerfana(o) || esExcluidoPorTag(o)) continue;
     if (!o.fecha_orden) continue;
     if (inicioValido && o.fecha_orden < inicioValido) continue; // warm-up
     if (o.fecha_orden < corte40) continue;
@@ -753,15 +782,18 @@ const seguimiento = {
     const b = bucketFor(o.estatus_actual);
 
     if (!ciudadPeriodo.has(ciudad)) {
-      ciudadPeriodo.set(ciudad, { recTotal: 0, recDev: 0, recCan: 0, antTotal: 0, antDev: 0, antCan: 0 });
+      ciudadPeriodo.set(ciudad, { recTotal: 0, recDev: 0, recCan: 0, recEnv: 0, antTotal: 0, antDev: 0, antCan: 0, antEnv: 0 });
     }
     const c = ciudadPeriodo.get(ciudad)!;
+    const conGuia = b === "entregado" || b === "devolucion" || b === "en_transito";
     if (reciente) {
       c.recTotal++;
+      if (conGuia) c.recEnv++;
       if (b === "devolucion") c.recDev++;
       if (b === "cancelado") c.recCan++;
     } else {
       c.antTotal++;
+      if (conGuia) c.antEnv++;
       if (b === "devolucion") c.antDev++;
       if (b === "cancelado") c.antCan++;
     }
@@ -785,8 +817,8 @@ const seguimiento = {
   for (const [ciudad, c] of ciudadPeriodo.entries()) {
     if (c.recTotal < 15 || c.antTotal < 15) continue;
 
-    const devRec = pct(c.recDev, c.recTotal);
-    const devAnt = pct(c.antDev, c.antTotal);
+    const devRec = pct(c.recDev, c.recEnv);
+    const devAnt = pct(c.antDev, c.antEnv);
     const canRec = pct(c.recCan, c.recTotal);
     const canAnt = pct(c.antCan, c.antTotal);
     const diffDev = Math.round((devRec - devAnt) * 10) / 10;
@@ -870,7 +902,7 @@ const seguimiento = {
   const novPorDiaMap = new Map<string, number>();
 
   for (const o of orders!) {
-    if (esHuerfana(o) || esDuplicado(o)) continue;
+    if (esHuerfana(o) || esExcluidoPorTag(o)) continue;
 
     // Solo cuenta si el pedido efectivamente tuvo una novedad registrada
     if (!o.fecha_novedad) continue;
@@ -901,6 +933,8 @@ return NextResponse.json({
     total,
     totalActivo,
     huerfanas,
+    excluidosPorTag,
+    totalEnviados,
     debugCargaIdMax: cargaIdMax,
     debugCantidadConCargaId: orders!.filter((o: any) => !!o.carga_id).length,
     debugSupabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -921,6 +955,8 @@ return NextResponse.json({
 confirmacionesPorVendedorPorDia,
     fechaReporteMaxProductividad,
 tagsResumen,
+    tagsExcluidos,
+    tagsCatalogo,
     seguimiento,
        estatusPorDia,
     todosLosEstatus,
